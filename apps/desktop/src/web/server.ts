@@ -1,0 +1,868 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+import { generateDrawPlan } from "../app/generateDrawPlan.js";
+import { applyCliOptions, type CliOptions } from "../cli/args.js";
+import { loadProfile } from "../config/loadProfile.js";
+import { listPortInfos, preferSerialPath } from "../serial/listPorts.js";
+import { SerialAckSender } from "../serial/sender.js";
+import { SimulatedAckSender } from "../simulator/sender.js";
+import type { SenderControls } from "../types.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
+const staticRoot = path.join(__dirname, "static");
+const firmwareRoot = path.join(repoRoot, "firmware", "esp32");
+const host = "127.0.0.1";
+const port = 4307;
+
+const FIRMWARE_ENVIRONMENTS = [
+  {
+    id: "esp32dev_wireless",
+    label: "ESP32-WROOM-32 / ESP-32S",
+    description: "推荐主线，最终用于 Bluetooth Classic 模拟 Switch Pro 手柄。",
+    recommended: true,
+  },
+  {
+    id: "nodemcu_32s_wireless",
+    label: "NodeMCU-32S",
+    description: "适合丝印或卖家标注为 NodeMCU-32S 的兼容板。",
+    recommended: false,
+  },
+  {
+    id: "xiao_esp32c3_serial",
+    label: "XIAO ESP32-C3（串口测试）",
+    description: "仅用于协议、ACK 和串口联调，不是最终的 Switch Pro 路线。",
+    recommended: false,
+  },
+] as const;
+
+type FirmwareEnvironmentId = (typeof FIRMWARE_ENVIRONMENTS)[number]["id"];
+const VALID_BRUSH_SIZES = new Set([1, 3, 7, 13, 19, 27] as const);
+type ExecutionTarget = "simulate" | "serial";
+type ExecutionStatus = "idle" | "running" | "paused" | "stopping" | "completed" | "failed" | "stopped";
+
+interface ManagedExecution {
+  id: number | null;
+  status: ExecutionStatus;
+  target: ExecutionTarget;
+  portPath: string | null;
+  baudRate: number | null;
+  totalCommands: number;
+  completedCommands: number;
+  currentCommand: string | null;
+  lines: string[];
+  startedAt: number | null;
+  finishedAt: number | null;
+  error: string | null;
+  sender: SenderControls | null;
+}
+
+let executionCounter = 0;
+
+function createEmptyExecution(): ManagedExecution {
+  return {
+    id: null,
+    status: "idle",
+    target: "serial",
+    portPath: null,
+    baudRate: null,
+    totalCommands: 0,
+    completedCommands: 0,
+    currentCommand: null,
+    lines: [],
+    startedAt: null,
+    finishedAt: null,
+    error: null,
+    sender: null,
+  };
+}
+
+let managedExecution: ManagedExecution = createEmptyExecution();
+
+function json(
+  response: ServerResponse,
+  statusCode: number,
+  payload: Record<string, unknown>,
+): void {
+  response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(payload));
+}
+
+function getContentType(filePath: string): string {
+  if (filePath.endsWith(".css")) {
+    return "text/css; charset=utf-8";
+  }
+
+  if (filePath.endsWith(".js")) {
+    return "application/javascript; charset=utf-8";
+  }
+
+  return "text/html; charset=utf-8";
+}
+
+async function serveStatic(response: ServerResponse, fileName: string): Promise<void> {
+  const filePath = path.join(staticRoot, fileName);
+  const content = await readFile(filePath);
+  response.writeHead(200, { "content-type": getContentType(filePath) });
+  response.end(content);
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw.length > 0 ? JSON.parse(raw) : {};
+}
+
+function decodeDataUrl(dataUrl: string): Buffer {
+  const match = /^data:.*?;base64,(.+)$/u.exec(dataUrl);
+
+  if (!match?.[1]) {
+    throw new Error("Invalid image payload.");
+  }
+
+  return Buffer.from(match[1], "base64");
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.ceil(ms / 1_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
+function resolvePlatformIoPath(): string | null {
+  const candidates = [
+    process.env.PLATFORMIO_BIN,
+    path.join(os.homedir(), ".platformio", "penv", "bin", "pio"),
+    path.join(os.homedir(), ".local", "bin", "pio"),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getFirmwareEnvironment(environmentId: string): (typeof FIRMWARE_ENVIRONMENTS)[number] {
+  const environment = FIRMWARE_ENVIRONMENTS.find((item) => item.id === environmentId);
+
+  if (!environment) {
+    throw new Error(`Unsupported firmware environment: ${environmentId}`);
+  }
+
+  return environment;
+}
+
+async function runPlatformIo(args: string[]): Promise<{
+  platformIoPath: string;
+  output: string;
+}> {
+  const platformIoPath = resolvePlatformIoPath();
+
+  if (!platformIoPath) {
+    throw new Error("PlatformIO not found. Install it first or set PLATFORMIO_BIN.");
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(platformIoPath, args, {
+      cwd: firmwareRoot,
+      env: process.env,
+    });
+
+    let output = `$ ${platformIoPath} ${args.join(" ")}\n`;
+
+    child.stdout.on("data", (chunk: string | Buffer) => {
+      output += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk: string | Buffer) => {
+      output += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (exitCode) => {
+      if (exitCode === 0) {
+        resolve({
+          platformIoPath,
+          output,
+        });
+        return;
+      }
+
+      reject(new Error(output.trim() || `PlatformIO exited with code ${String(exitCode)}`));
+    });
+  });
+}
+
+function withDefined<T extends Record<string, unknown>>(values: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(values).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
+function normalizeBrushSize(value: unknown, fallback: 1 | 3 | 7 | 13 | 19 | 27): 1 | 3 | 7 | 13 | 19 | 27 {
+  return typeof value === "number" && VALID_BRUSH_SIZES.has(value as 1 | 3 | 7 | 13 | 19 | 27)
+    ? (value as 1 | 3 | 7 | 13 | 19 | 27)
+    : fallback;
+}
+
+function isManagedExecutionActive(status: ExecutionStatus): boolean {
+  return status === "running" || status === "paused" || status === "stopping";
+}
+
+function appendManagedExecutionLine(execution: ManagedExecution, line: string): void {
+  execution.lines.push(line);
+
+  if (execution.lines.length > 400) {
+    execution.lines.splice(0, execution.lines.length - 400);
+  }
+}
+
+function snapshotManagedExecution(execution: ManagedExecution = managedExecution): Record<string, unknown> {
+  return {
+    id: execution.id,
+    status: execution.status,
+    target: execution.target,
+    portPath: execution.portPath,
+    baudRate: execution.baudRate,
+    totalCommands: execution.totalCommands,
+    completedCommands: execution.completedCommands,
+    currentCommand: execution.currentCommand,
+    startedAt: execution.startedAt,
+    finishedAt: execution.finishedAt,
+    error: execution.error,
+    lines: execution.lines,
+  };
+}
+
+function makeCliOverrides(input: {
+  size?: number;
+  width?: number;
+  height?: number;
+  colors?: number;
+  threshold?: number;
+  resizeMode?: "contain" | "cover";
+  mode?: "mono" | "palette";
+  palette?: string[];
+}): CliOptions {
+  return {
+    send: false,
+    simulateDevice: false,
+    listPorts: false,
+    previewScale: 12,
+    help: false,
+    ...withDefined({
+      size: input.size,
+      width: input.width,
+      height: input.height,
+      colors: input.colors,
+      threshold: input.threshold,
+      resizeMode: input.resizeMode,
+      mode: input.mode,
+      palette: input.palette,
+    }),
+  };
+}
+
+async function handleGenerate(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJsonBody(request)) as {
+    imageDataUrl?: string;
+    profile?: string;
+    size?: number;
+    brushSize?: number;
+    width?: number;
+    height?: number;
+    threshold?: number;
+    mode?: "mono" | "palette";
+    colors?: number;
+    resizeMode?: "contain" | "cover";
+    palette?: string[];
+    previewScale?: number;
+  };
+
+  if (!body.imageDataUrl) {
+    json(response, 400, { error: "Missing imageDataUrl." });
+    return;
+  }
+
+  const baseProfile = applyCliOptions(
+    await loadProfile(body.profile),
+    makeCliOverrides(
+      withDefined({
+        size: body.size,
+        width: body.width,
+        height: body.height,
+        colors: body.colors,
+        threshold: body.threshold,
+        resizeMode: body.resizeMode,
+        mode: body.mode,
+        palette: body.palette,
+      }),
+    ),
+  );
+  const profile = {
+    ...baseProfile,
+    brushSize: normalizeBrushSize(body.brushSize, baseProfile.brushSize),
+  };
+
+  const plan = await generateDrawPlan(
+    decodeDataUrl(body.imageDataUrl),
+    profile,
+    body.previewScale ?? 12,
+  );
+
+  json(response, 200, {
+    profile: {
+      profileName: profile.profileName,
+      canvasWidth: profile.canvasWidth,
+      canvasHeight: profile.canvasHeight,
+      brushSize: profile.brushSize,
+      colorMode: profile.colorMode,
+      palette: profile.palette,
+      baudRate: profile.baudRate,
+      ackTimeoutMs: profile.ackTimeoutMs,
+      commandRetryCount: profile.commandRetryCount,
+    },
+    stats: {
+      usedColorIndexes: plan.usedColorIndexes,
+      totalPixels: plan.totalPixels,
+      commandCount: plan.commands.length,
+      estimatedRuntimeMs: plan.estimatedRuntimeMs,
+      estimatedRuntimeLabel: formatDuration(plan.estimatedRuntimeMs),
+    },
+    previewDataUrl: `data:image/png;base64,${plan.previewPng.toString("base64")}`,
+    commands: plan.commands,
+  });
+}
+
+async function executeCommands(body: {
+  commands?: string[];
+  target?: "simulate" | "serial";
+  portPath?: string;
+  baudRate?: number;
+  ackTimeoutMs?: number;
+  retries?: number;
+  ackDelayMs?: number;
+  errorAtCommand?: number;
+}): Promise<{
+  success: true;
+  target: "simulate" | "serial";
+  totalCommands: number;
+  lines: string[];
+}> {
+  if (!Array.isArray(body.commands) || body.commands.length === 0) {
+    throw new Error("Missing commands.");
+  }
+
+  const target = body.target === "serial" ? "serial" : "simulate";
+  const ackTimeoutMs = body.ackTimeoutMs ?? 5_000;
+  const retries = body.retries ?? 1;
+  const lines: string[] = [`INFO target=${target} commands=${body.commands.length}`];
+
+  if (target === "serial") {
+    if (!body.portPath) {
+      throw new Error("Missing portPath.");
+    }
+
+    const sender = new SerialAckSender();
+
+    lines.push(`INFO port=${body.portPath} baud=${body.baudRate ?? 115200}`);
+
+    await sender.send(body.commands, {
+      path: body.portPath,
+      baudRate: body.baudRate ?? 115200,
+      ackTimeoutMs,
+      retries,
+      onDeviceLine: (line) => {
+        lines.push(line);
+      },
+    });
+  } else {
+    const sender = new SimulatedAckSender();
+
+    await sender.send(body.commands, {
+      ackTimeoutMs,
+      retries,
+      ackDelayMs: body.ackDelayMs ?? 0,
+      ...(body.errorAtCommand !== undefined ? { errorAtCommand: body.errorAtCommand } : {}),
+      onDeviceLine: (line) => {
+        lines.push(line);
+      },
+    });
+  }
+
+  lines.push("INFO completed");
+
+  return {
+    success: true,
+    target,
+    totalCommands: body.commands.length,
+    lines,
+  };
+}
+
+async function runManagedExecution(
+  execution: ManagedExecution,
+  body: {
+    commands: string[];
+    target: ExecutionTarget;
+    portPath?: string;
+    baudRate?: number;
+    ackTimeoutMs?: number;
+    retries?: number;
+    ackDelayMs?: number;
+    errorAtCommand?: number;
+  },
+): Promise<void> {
+  const ackTimeoutMs = body.ackTimeoutMs ?? 5_000;
+  const retries = body.retries ?? 1;
+
+  appendManagedExecutionLine(
+    execution,
+    `INFO target=${body.target} commands=${body.commands.length}`,
+  );
+
+  try {
+    if (body.target === "serial") {
+      if (!body.portPath) {
+        throw new Error("Missing portPath.");
+      }
+
+      const sender = execution.sender as SerialAckSender;
+      appendManagedExecutionLine(
+        execution,
+        `INFO port=${body.portPath} baud=${body.baudRate ?? 115200}`,
+      );
+
+      await sender.send(body.commands, {
+        path: body.portPath,
+        baudRate: body.baudRate ?? 115200,
+        ackTimeoutMs,
+        retries,
+        onProgress: ({ index, command }) => {
+          execution.completedCommands = index;
+          execution.currentCommand = command;
+        },
+        onDeviceLine: (line) => {
+          appendManagedExecutionLine(execution, line);
+        },
+      });
+    } else {
+      const sender = execution.sender as SimulatedAckSender;
+
+      await sender.send(body.commands, {
+        ackTimeoutMs,
+        retries,
+        ackDelayMs: body.ackDelayMs ?? 0,
+        ...(body.errorAtCommand !== undefined ? { errorAtCommand: body.errorAtCommand } : {}),
+        onProgress: ({ index, command }) => {
+          execution.completedCommands = index;
+          execution.currentCommand = command;
+        },
+        onDeviceLine: (line) => {
+          appendManagedExecutionLine(execution, line);
+        },
+      });
+    }
+
+    execution.currentCommand = null;
+
+    if (execution.status === "stopping") {
+      execution.status = "stopped";
+      appendManagedExecutionLine(execution, "INFO stopped");
+    } else {
+      execution.status = "completed";
+      appendManagedExecutionLine(execution, "INFO completed");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    execution.status = "failed";
+    execution.error = message;
+    execution.currentCommand = null;
+    appendManagedExecutionLine(execution, `ERR ${message}`);
+  } finally {
+    execution.finishedAt = Date.now();
+    execution.sender = null;
+  }
+}
+
+async function startManagedExecution(body: {
+  commands?: string[];
+  target?: ExecutionTarget;
+  portPath?: string;
+  baudRate?: number;
+  ackTimeoutMs?: number;
+  retries?: number;
+  ackDelayMs?: number;
+  errorAtCommand?: number;
+}): Promise<Record<string, unknown>> {
+  if (!Array.isArray(body.commands) || body.commands.length === 0) {
+    throw new Error("Missing commands.");
+  }
+
+  if (isManagedExecutionActive(managedExecution.status)) {
+    throw new Error("A drawing execution is already running.");
+  }
+
+  const target: ExecutionTarget = body.target === "simulate" ? "simulate" : "serial";
+  const portPath = target === "serial" ? preferSerialPath(body.portPath ?? "") : null;
+
+  if (target === "serial" && !portPath) {
+    throw new Error("Missing portPath.");
+  }
+
+  const sender: SenderControls =
+    target === "serial" ? new SerialAckSender() : new SimulatedAckSender();
+
+  const execution: ManagedExecution = {
+    id: executionCounter += 1,
+    status: "running",
+    target,
+    portPath,
+    baudRate: body.baudRate ?? 115200,
+    totalCommands: body.commands.length,
+    completedCommands: 0,
+    currentCommand: null,
+    lines: [],
+    startedAt: Date.now(),
+    finishedAt: null,
+    error: null,
+    sender,
+  };
+
+  managedExecution = execution;
+
+  void runManagedExecution(
+    execution,
+    withDefined({
+      commands: body.commands,
+      target,
+      ...(portPath ? { portPath } : {}),
+      baudRate: body.baudRate,
+      ackTimeoutMs: body.ackTimeoutMs,
+      retries: body.retries,
+      ackDelayMs: body.ackDelayMs,
+      errorAtCommand: body.errorAtCommand,
+    }) as {
+      commands: string[];
+      target: ExecutionTarget;
+      portPath?: string;
+      baudRate?: number;
+      ackTimeoutMs?: number;
+      retries?: number;
+      ackDelayMs?: number;
+      errorAtCommand?: number;
+    },
+  );
+
+  return snapshotManagedExecution(execution);
+}
+
+async function handlePorts(response: ServerResponse): Promise<void> {
+  json(response, 200, {
+    ports: await listPortInfos(),
+  });
+}
+
+async function handleFirmwareInfo(response: ServerResponse): Promise<void> {
+  const platformIoPath = resolvePlatformIoPath();
+
+  json(response, 200, {
+    platformIo: {
+      available: platformIoPath !== null,
+      path: platformIoPath,
+      firmwareRoot,
+    },
+    environments: FIRMWARE_ENVIRONMENTS,
+  });
+}
+
+async function handleFirmwareFlash(
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const body = (await readJsonBody(request)) as {
+    environmentId?: FirmwareEnvironmentId;
+    portPath?: string;
+  };
+
+  try {
+    if (!body.environmentId) {
+      throw new Error("Missing environmentId.");
+    }
+
+    if (!body.portPath) {
+      throw new Error("Missing portPath.");
+    }
+
+    const environment = getFirmwareEnvironment(body.environmentId);
+    const portPath = preferSerialPath(body.portPath);
+    const result = await runPlatformIo([
+      "run",
+      "-e",
+      environment.id,
+      "-t",
+      "upload",
+      "--upload-port",
+      portPath,
+    ]);
+
+    json(response, 200, {
+      success: true,
+      environment,
+      portPath,
+      platformIoPath: result.platformIoPath,
+      output: result.output,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 400, { error: message });
+  }
+}
+
+async function handleExecute(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJsonBody(request)) as {
+    commands?: string[];
+    target?: "simulate" | "serial";
+    portPath?: string;
+    baudRate?: number;
+    ackTimeoutMs?: number;
+    retries?: number;
+    ackDelayMs?: number;
+    errorAtCommand?: number;
+  };
+
+  try {
+    json(response, 200, await executeCommands(body));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 400, { error: message });
+  }
+}
+
+async function handleExecutionStart(
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const body = (await readJsonBody(request)) as {
+    commands?: string[];
+    target?: ExecutionTarget;
+    portPath?: string;
+    baudRate?: number;
+    ackTimeoutMs?: number;
+    retries?: number;
+    ackDelayMs?: number;
+    errorAtCommand?: number;
+  };
+
+  try {
+    json(response, 200, {
+      success: true,
+      execution: await startManagedExecution(body),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 400, { error: message });
+  }
+}
+
+async function handleExecutionStatus(response: ServerResponse): Promise<void> {
+  json(response, 200, {
+    success: true,
+    execution: snapshotManagedExecution(),
+  });
+}
+
+function updateManagedExecutionState(
+  nextStatus: ExecutionStatus,
+  line: string,
+): Record<string, unknown> {
+  if (!managedExecution.sender || !managedExecution.id) {
+    throw new Error("No active drawing execution.");
+  }
+
+  managedExecution.status = nextStatus;
+  appendManagedExecutionLine(managedExecution, line);
+  return snapshotManagedExecution();
+}
+
+async function handleExecutionPause(response: ServerResponse): Promise<void> {
+  try {
+    if (managedExecution.status !== "running" || !managedExecution.sender) {
+      throw new Error("Drawing execution is not running.");
+    }
+
+    managedExecution.sender.pause();
+    json(response, 200, {
+      success: true,
+      execution: updateManagedExecutionState("paused", "INFO execution paused"),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 400, { error: message });
+  }
+}
+
+async function handleExecutionResume(response: ServerResponse): Promise<void> {
+  try {
+    if (managedExecution.status !== "paused" || !managedExecution.sender) {
+      throw new Error("Drawing execution is not paused.");
+    }
+
+    managedExecution.sender.resume();
+    json(response, 200, {
+      success: true,
+      execution: updateManagedExecutionState("running", "INFO execution resumed"),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 400, { error: message });
+  }
+}
+
+async function handleExecutionStop(response: ServerResponse): Promise<void> {
+  try {
+    if (!managedExecution.sender || !isManagedExecutionActive(managedExecution.status)) {
+      throw new Error("No active drawing execution to stop.");
+    }
+
+    managedExecution.sender.stop();
+    json(response, 200, {
+      success: true,
+      execution: updateManagedExecutionState("stopping", "INFO execution stop requested"),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 400, { error: message });
+  }
+}
+
+async function handleSimulate(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJsonBody(request)) as {
+    commands?: string[];
+    ackDelayMs?: number;
+    errorAtCommand?: number;
+  };
+
+  try {
+    json(
+      response,
+      200,
+      await executeCommands({
+        ...body,
+        target: "simulate",
+      }),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 400, { error: message });
+  }
+}
+
+const server = createServer(async (request, response) => {
+  try {
+    if (!request.url || !request.method) {
+      json(response, 400, { error: "Invalid request." });
+      return;
+    }
+
+    const url = new URL(request.url, `http://${host}:${port}`);
+
+    if (request.method === "GET" && url.pathname === "/") {
+      await serveStatic(response, "index.html");
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/app.js") {
+      await serveStatic(response, "app.js");
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/styles.css") {
+      await serveStatic(response, "styles.css");
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/ports") {
+      await handlePorts(response);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/firmware/info") {
+      await handleFirmwareInfo(response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/generate") {
+      await handleGenerate(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/firmware/flash") {
+      await handleFirmwareFlash(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/execute") {
+      await handleExecute(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/execution/start") {
+      await handleExecutionStart(request, response);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/execution/status") {
+      await handleExecutionStatus(response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/execution/pause") {
+      await handleExecutionPause(response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/execution/resume") {
+      await handleExecutionResume(response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/execution/stop") {
+      await handleExecutionStop(response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/simulate") {
+      await handleSimulate(request, response);
+      return;
+    }
+
+    json(response, 404, { error: "Not found." });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 500, { error: message });
+  }
+});
+
+server.listen(port, host, () => {
+  console.log(`Switch Auto Draw UI running at http://${host}:${port}`);
+});

@@ -1,0 +1,22 @@
+{
+  "name": "switch-auto-draw",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx apps/desktop/src/index.ts",
+    "ui:dev": "tsx apps/desktop/src/web/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
+    "serialport": "^13.0.0",
+    "sharp": "^0.34.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Switch Auto Draw Studio</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Switch Auto Draw</p>
+          <h1>把图片、固件和手柄测试收进一个工作台</h1>
+          <p class="subcopy">
+            现在这版 Web UI 已经覆盖三块核心工作：生成绘图脚本、刷入 ESP32 固件、以及做单步手柄动作测试。真实的
+            Switch Pro 控制器模拟仍在固件层持续推进。
+          </p>
+        </div>
+        <div class="hero-badge">
+          <span>Current Mode</span>
+          <strong>Studio + Flash + Test</strong>
+        </div>
+      </header>
+
+      <nav class="page-nav">
+        <button class="page-tab active" data-page-target="studio">脚本生成</button>
+        <button class="page-tab" data-page-target="firmware">刷入固件</button>
+        <button class="page-tab" data-page-target="controller">手柄测试</button>
+      </nav>
+
+      <section class="page page-active" data-page="studio">
+        <main class="grid">
+          <section class="panel panel-form">
+            <div class="panel-head">
+              <h2>输入</h2>
+              <p>导入图片，设定单色阈值、1 号笔和执行参数。</p>
+            </div>
+
+            <label class="file-drop" for="image-input">
+              <input id="image-input" type="file" accept="image/png,image/jpeg,image/svg+xml" />
+              <span class="file-title">导入图片</span>
+              <span class="file-meta" id="file-label">支持 PNG / JPG / SVG</span>
+            </label>
+
+            <div id="studio-connection-card" class="studio-connection-card studio-connection-warning">
+              <div class="studio-connection-copy">
+                <span id="studio-connection-pill" class="status-pill">需要测试</span>
+                <strong id="studio-connection-title" class="status-title">需要先进行手柄测试</strong>
+                <p id="studio-connection-detail" class="status-detail">
+                  当前还没有确认开发板已经连上 Switch。开始绘制前，请先到“手柄测试”页完成连接。
+                </p>
+              </div>
+              <button id="studio-open-controller-button" class="ghost" type="button">前往手柄测试</button>
+            </div>
+
+            <div class="execution-box mono-note-box">
+              <div class="panel-head compact">
+                <h2>单色绘制</h2>
+                <p>当前版本先固定走 128x128 + 1 号笔 + 画布中心起步，把 A 落笔和方向键逐点移动这条链路跑稳。</p>
+              </div>
+
+              <p class="hint" id="studio-mode-hint">
+                深色像素会绘制，浅色像素会保留为空白背景，不需要切换调色板。
+              </p>
+            </div>
+
+            <div class="field-grid studio-settings-grid">
+              <label>
+                <span>画布尺寸（固定）</span>
+                <select id="size-select">
+                  <option value="128" selected>128x128</option>
+                </select>
+              </label>
+
+              <label>
+                <span>画笔大小</span>
+                <select id="brush-size-select">
+                  <option value="1" selected>1</option>
+                  <option value="3">3</option>
+                  <option value="7">7</option>
+                  <option value="13">13</option>
+                  <option value="19">19</option>
+                  <option value="27">27</option>
+                </select>
+              </label>
+
+              <label>
+                <span>缩放</span>
+                <select id="resize-select">
+                  <option value="contain">Contain</option>
+                  <option value="cover">Cover</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="range-row">
+              <span>单色阈值</span>
+              <input id="threshold-range" type="range" min="0" max="255" value="128" />
+              <strong id="threshold-value">128</strong>
+            </label>
+
+            <div class="execution-box">
+              <div class="panel-head compact">
+                <h2>执行</h2>
+                <p>手柄连接完成后，这里会直接把脚本发送到 ESP32 串口设备。</p>
+              </div>
+
+              <div class="field-grid execution-grid">
+                <label>
+                  <span>串口设备</span>
+                  <select id="studio-port-select">
+                    <option value="">未检测到串口</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="action-row slim">
+                <button id="refresh-ports-button" class="ghost" type="button">刷新串口</button>
+              </div>
+
+              <p class="hint" id="execution-hint">请选择串口设备，连接手柄后即可直接开始绘制。</p>
+            </div>
+
+            <div class="action-row">
+              <button id="quick-start-button" class="primary">一键开始绘制</button>
+              <button id="generate-button" class="ghost">仅生成命令</button>
+              <button id="execute-button" class="ghost" disabled>执行现有脚本</button>
+            </div>
+
+            <div class="action-row slim">
+              <button id="pause-execution-button" class="ghost" type="button" disabled>暂停绘制</button>
+              <button id="resume-execution-button" class="ghost" type="button" disabled>继续绘制</button>
+              <button id="stop-execution-button" class="ghost" type="button" disabled>中断绘制</button>
+            </div>
+
+            <p class="hint" id="studio-execution-status">当前未开始绘制。</p>
+          </section>
+
+          <section class="panel panel-preview">
+            <div class="panel-head">
+              <h2>预览</h2>
+              <p>这里显示像素化结果和关键统计信息。</p>
+            </div>
+
+            <div class="preview-frame">
+              <img id="preview-image" alt="生成预览" />
+              <div class="empty-state" id="preview-empty">生成后这里会显示像素预览。</div>
+            </div>
+
+            <div class="stat-strip">
+              <div class="stat-card">
+                <span>颜色</span>
+                <strong id="stat-colors">-</strong>
+              </div>
+              <div class="stat-card">
+                <span>像素</span>
+                <strong id="stat-pixels">-</strong>
+              </div>
+              <div class="stat-card">
+                <span>命令数</span>
+                <strong id="stat-commands">-</strong>
+              </div>
+              <div class="stat-card">
+                <span>预计耗时</span>
+                <strong id="stat-runtime">-</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel panel-script">
+            <div class="panel-head">
+              <h2>脚本</h2>
+              <p>这是当前协议下可直接发送给设备的动作脚本。</p>
+            </div>
+
+            <textarea id="commands-output" class="code-block" spellcheck="false" placeholder="生成后会在这里显示命令脚本"></textarea>
+
+            <div class="action-row slim">
+              <button id="copy-button" class="ghost" disabled>复制脚本</button>
+              <button id="download-button" class="ghost" disabled>下载脚本</button>
+            </div>
+          </section>
+
+          <section class="panel panel-log">
+            <div class="panel-head">
+              <h2>执行日志</h2>
+              <p>这里会显示模拟器日志，或者串口设备返回的状态信息。</p>
+            </div>
+
+            <pre id="log-output" class="log-output" data-empty-log="等待生成命令...">等待生成命令...</pre>
+
+            <div class="action-row slim">
+              <button id="studio-clear-log-button" class="ghost" type="button">清空日志</button>
+            </div>
+          </section>
+        </main>
+      </section>
+
+      <section class="page" data-page="firmware">
+        <main class="firmware-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>刷入固件</h2>
+              <p>这里会调用本机的 PlatformIO，直接把固件编译并刷入 ESP32。</p>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>目标环境</span>
+                <select id="firmware-env-select"></select>
+              </label>
+
+              <label>
+                <span>串口设备</span>
+                <select id="firmware-port-select">
+                  <option value="">未检测到串口</option>
+                </select>
+              </label>
+            </div>
+
+            <p class="hint" id="firmware-platformio-hint">正在检测 PlatformIO...</p>
+            <p class="hint" id="firmware-env-hint">选择目标开发板后，这里会显示对应说明。</p>
+
+            <div class="action-row">
+              <button id="firmware-refresh-button" class="ghost" type="button">刷新串口</button>
+              <button id="firmware-flash-button" class="primary">编译并刷入固件</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>刷入结果</h2>
+              <p>这里会用简洁信息展示最近一次刷写是否成功。</p>
+            </div>
+
+            <div id="firmware-status-card" class="firmware-status-card firmware-status-idle">
+              <span id="firmware-status-pill" class="status-pill">待执行</span>
+              <strong id="firmware-status-title" class="status-title">等待刷入固件</strong>
+              <p id="firmware-status-detail" class="status-detail">
+                点击“编译并刷入固件”后，这里会显示成功或失败。
+              </p>
+            </div>
+
+            <dl class="firmware-meta-list">
+              <div class="firmware-meta-row">
+                <dt>目标环境</dt>
+                <dd id="firmware-status-env">-</dd>
+              </div>
+              <div class="firmware-meta-row">
+                <dt>串口设备</dt>
+                <dd id="firmware-status-port">-</dd>
+              </div>
+              <div class="firmware-meta-row">
+                <dt>PlatformIO</dt>
+                <dd id="firmware-status-tooling">-</dd>
+              </div>
+              <div class="firmware-meta-row">
+                <dt>最近更新</dt>
+                <dd id="firmware-status-time">-</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="panel firmware-log-panel">
+            <div class="panel-head">
+              <h2>刷写日志</h2>
+              <p>这里会返回 PlatformIO 的完整输出，方便排查烧录问题。</p>
+            </div>
+
+            <pre id="firmware-log-output" class="log-output" data-empty-log="等待刷入固件...">等待刷入固件...</pre>
+
+            <div class="action-row slim">
+              <button id="firmware-clear-log-button" class="ghost" type="button">清空日志</button>
+            </div>
+          </section>
+        </main>
+      </section>
+
+      <section class="page" data-page="controller">
+        <main class="controller-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>手柄测试</h2>
+              <p>这里用单步命令测试真实设备动作，不依赖整张图片脚本。</p>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>串口设备</span>
+                <select id="controller-port-select">
+                  <option value="">未检测到串口</option>
+                </select>
+              </label>
+
+              <label>
+                <span>摇杆步数</span>
+                <select id="controller-step-select">
+                  <option value="1">1 格</option>
+                  <option value="2">2 格</option>
+                  <option value="4">4 格</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="action-row slim">
+              <button id="controller-refresh-button" class="ghost" type="button">刷新串口</button>
+              <button id="controller-info-button" class="ghost" type="button">连接手柄</button>
+              <button id="controller-reset-button" class="ghost" type="button">重置蓝牙</button>
+            </div>
+
+            <div class="controller-test-layout">
+              <div class="test-block">
+                <p class="block-title">摇杆移动</p>
+                <div class="dpad-grid">
+                  <button class="ghost dpad-up" data-controller-action="move-up">上</button>
+                  <button class="ghost dpad-left" data-controller-action="move-left">左</button>
+                  <div class="dpad-center dpad-label">左摇杆</div>
+                  <button class="ghost dpad-right" data-controller-action="move-right">右</button>
+                  <button class="ghost dpad-down" data-controller-action="move-down">下</button>
+                </div>
+              </div>
+
+              <div class="test-block">
+                <p class="block-title">方向键</p>
+                <div class="dpad-grid">
+                  <button class="ghost dpad-up" data-controller-action="dpad-up">上</button>
+                  <button class="ghost dpad-left" data-controller-action="dpad-left">左</button>
+                  <div class="dpad-center dpad-label">十字键</div>
+                  <button class="ghost dpad-right" data-controller-action="dpad-right">右</button>
+                  <button class="ghost dpad-down" data-controller-action="dpad-down">下</button>
+                </div>
+              </div>
+
+              <div class="test-block wide">
+                <p class="block-title">按钮测试</p>
+                <div class="button-grid controller-button-grid">
+                  <button class="ghost" data-controller-action="button-l">L</button>
+                  <button class="ghost" data-controller-action="button-zl">ZL</button>
+                  <button class="ghost" data-controller-action="button-x">X</button>
+                  <button class="ghost" data-controller-action="button-y">Y</button>
+                  <button class="ghost" data-controller-action="button-r">R</button>
+                  <button class="ghost" data-controller-action="button-zr">ZR</button>
+                  <button class="ghost" data-controller-action="button-a">A</button>
+                  <button class="ghost" data-controller-action="button-b">B</button>
+                  <button class="ghost" data-controller-action="button-minus">-</button>
+                  <button class="ghost" data-controller-action="button-plus">+</button>
+                  <button class="ghost" data-controller-action="button-home">Home</button>
+                  <button class="ghost" data-controller-action="button-capture">Capture</button>
+                  <button class="ghost" data-controller-action="button-ls">LS</button>
+                  <button class="ghost" data-controller-action="button-rs">RS</button>
+                  <button class="ghost wide" data-controller-action="pair-lr">L+R 配对</button>
+                </div>
+              </div>
+            </div>
+
+            <label>
+              <span>自定义测试命令</span>
+              <textarea id="controller-custom-commands" rows="6" placeholder="例如：&#10;I&#10;BTN HOME&#10;BTN DUP&#10;M 1 0"></textarea>
+            </label>
+
+            <div class="action-row">
+              <button id="controller-send-custom-button" class="primary">发送自定义命令</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>连接状态</h2>
+              <p>把开发板是否可发现、是否认证、是否真正连上手柄这几步单独可视化出来。</p>
+            </div>
+
+            <div id="controller-status-card" class="firmware-status-card firmware-status-idle controller-status-card">
+              <span id="controller-status-pill" class="status-pill">待连接</span>
+              <strong id="controller-status-title" class="status-title">等待连接手柄</strong>
+              <p id="controller-status-detail" class="status-detail">
+                点击“连接手柄”后，这里会显示当前蓝牙发现、认证、连接和报告发送状态。
+              </p>
+
+              <div class="controller-health-grid">
+                <div class="controller-health-item">
+                  <span>可发现</span>
+                  <strong id="controller-health-discoverable">未知</strong>
+                </div>
+                <div class="controller-health-item">
+                  <span>已认证</span>
+                  <strong id="controller-health-auth">未知</strong>
+                </div>
+                <div class="controller-health-item">
+                  <span>已连接</span>
+                  <strong id="controller-health-connected">未知</strong>
+                </div>
+                <div class="controller-health-item">
+                  <span>已配对</span>
+                  <strong id="controller-health-paired">未知</strong>
+                </div>
+                <div class="controller-health-item">
+                  <span>可发送</span>
+                  <strong id="controller-health-ready">未知</strong>
+                </div>
+              </div>
+
+              <dl class="firmware-meta-list controller-meta-list">
+                <div class="firmware-meta-row">
+                  <dt>传输层</dt>
+                  <dd id="controller-status-transport">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>配置</dt>
+                  <dd id="controller-status-profile">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>最近主机</dt>
+                  <dd id="controller-status-peer">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>初始化步骤</dt>
+                  <dd id="controller-status-init-step">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>初始化结果</dt>
+                  <dd id="controller-status-init-error">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>最近更新</dt>
+                  <dd id="controller-status-time">-</dd>
+                </div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel controller-log-panel">
+            <div class="panel-head">
+              <h2>测试日志</h2>
+              <p>这里会显示每次按钮测试或自定义命令的返回内容。</p>
+            </div>
+
+            <pre id="controller-log-output" class="log-output" data-empty-log="等待开始测试...">等待开始测试...</pre>
+
+            <div class="action-row slim">
+              <button id="controller-clear-log-button" class="ghost" type="button">清空日志</button>
+            </div>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

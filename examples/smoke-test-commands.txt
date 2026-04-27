@@ -1,0 +1,18 @@
+# Minimal serial + parser + timing smoke test for a newly arrived board.
+# Lines beginning with # are ignored by the CLI.
+
+I
+A
+W 250
+B
+W 250
+X
+W 250
+Y
+W 250
+M 1 0
+M -1 0
+M 0 1
+M 0 -1
+H
+E
