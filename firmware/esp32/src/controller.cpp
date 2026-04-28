@@ -168,8 +168,8 @@ void SwitchController::pressButtons(uint32_t buttonsMask) {
 
 void SwitchController::resetBasicPaletteTracking() {
   for (uint8_t slot = 0; slot < COLOR_PALETTE_SLOT_COUNT; slot += 1) {
-    basicPaletteSlotRows_[slot] = BASIC_COLOR_ANCHOR_ROW;
-    basicPaletteSlotCols_[slot] = BASIC_COLOR_ANCHOR_COL;
+    basicPaletteSlotRows_[slot] = BASIC_COLOR_INITIAL_SLOT_ROWS[slot];
+    basicPaletteSlotCols_[slot] = BASIC_COLOR_INITIAL_SLOT_COLS[slot];
   }
 
   basicPaletteTrackingReady_ = true;
@@ -265,8 +265,8 @@ void SwitchController::configureBasicPaletteSlot(int index, uint8_t row, uint8_t
   const int slotIndex = clampPaletteSlotIndex(index);
   const uint8_t targetRow = clampBasicColorRow(row);
   const uint8_t targetCol = clampBasicColorCol(col);
-  const uint8_t currentRow = basicPaletteTrackingReady_ ? basicPaletteSlotRows_[slotIndex] : BASIC_COLOR_ANCHOR_ROW;
-  const uint8_t currentCol = basicPaletteTrackingReady_ ? basicPaletteSlotCols_[slotIndex] : BASIC_COLOR_ANCHOR_COL;
+  const uint8_t currentRow = basicPaletteTrackingReady_ ? basicPaletteSlotRows_[slotIndex] : BASIC_COLOR_INITIAL_SLOT_ROWS[slotIndex];
+  const uint8_t currentCol = basicPaletteTrackingReady_ ? basicPaletteSlotCols_[slotIndex] : BASIC_COLOR_INITIAL_SLOT_COLS[slotIndex];
   const uint8_t upSteps = wrappedUpSteps(currentRow, targetRow);
   const uint8_t leftSteps = wrappedLeftSteps(currentCol, targetCol);
 

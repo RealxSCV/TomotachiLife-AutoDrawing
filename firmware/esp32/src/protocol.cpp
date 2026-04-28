@@ -422,7 +422,7 @@ bool executeCommand(const String &line, SwitchController &controller, String &er
 
   if (isBasicColorResetCommand(line)) {
     controller.resetBasicPaletteTracking();
-    Serial.println("INFO action=basic-color-reset anchor=white");
+    Serial.println("INFO action=basic-color-reset anchor=default-initial-slots");
     return true;
   }
 
