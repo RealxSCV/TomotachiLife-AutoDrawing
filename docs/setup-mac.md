@@ -1,5 +1,11 @@
 # Setup on macOS
 
+## Path note
+
+- Commands in this document assume you are already inside your own local project directory
+- Replace serial examples such as `/dev/cu.usbmodemXXXX` or `/dev/cu.SLAB_USBtoUART` with your own device path
+- If `pio` is already in your shell `PATH`, you can use `pio ...`; otherwise keep using the full `~/.platformio/penv/bin/pio ...` form
+
 ## Prerequisites
 
 - Node.js 22 or newer
@@ -35,7 +41,7 @@ npm run dev -- --list-ports
 ## Stream to the board
 
 ```bash
-npm run dev -- --image ./examples/demo.svg --port /dev/cu.usbmodemXXXX --send
+npm run dev -- --image ./examples/demo.svg --port <your-serial-port> --send
 ```
 
 ## Flash firmware for ESP32-WROOM-32 / ESP-32S
@@ -55,7 +61,7 @@ pio device monitor -b 115200
 ## Smoke test a fresh board
 
 ```bash
-npm run dev -- --commands-file ./examples/smoke-test-commands.txt --port /dev/cu.SLAB_USBtoUART --send
+npm run dev -- --commands-file ./examples/smoke-test-commands.txt --port <your-serial-port> --send
 ```
 
 For a step-by-step bring-up flow, see `docs/arrival-checklist.md`.

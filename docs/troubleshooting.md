@@ -16,7 +16,7 @@
 ## ESP32 board does not appear on macOS
 
 - Confirm the cable supports data, not just charging
-- Look for a port such as `/dev/cu.SLAB_USBtoUART`
+- Look for a port such as `/dev/cu.SLAB_USBtoUART` or `/dev/cu.usbserial-*` as an example device name
 - If the board uses `CP2102` and no port appears, install the official `CP210x VCP` driver from Silicon Labs
 
 ## Drawing drifts on Switch

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx apps/desktop/src/index.ts",
     "ui:dev": "tsx apps/desktop/src/web/server.ts",
+    "start:mac": "bash scripts/macos-launch.sh",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit"
   },

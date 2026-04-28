@@ -2,6 +2,12 @@
 
 Use this checklist when your ESP32-WROOM-32 / ESP-32S board arrives.
 
+## Path note
+
+- Serial device names shown below are examples
+- Replace values such as `/dev/cu.SLAB_USBtoUART` with your own device path
+- If `pio` is already in your shell `PATH`, you can use `pio ...`; otherwise keep using the full `~/.platformio/penv/bin/pio ...` form
+
 ## 1. Connect the board
 
 - Plug the board into your Mac with a data-capable USB-C cable
@@ -47,7 +53,7 @@ That means the firmware started, the serial path is alive, and the Bluetooth tra
 Use the canned command file:
 
 ```bash
-npm run dev -- --commands-file ./examples/smoke-test-commands.txt --port /dev/cu.SLAB_USBtoUART --send
+npm run dev -- --commands-file ./examples/smoke-test-commands.txt --port <your-serial-port> --send
 ```
 
 Expected result:
@@ -68,7 +74,7 @@ npm run dev -- --image ./examples/demo.svg --preview ./tmp/demo-preview.png --wr
 Then stream the generated commands:
 
 ```bash
-npm run dev -- --image ./examples/demo.svg --port /dev/cu.SLAB_USBtoUART --send
+npm run dev -- --image ./examples/demo.svg --port <your-serial-port> --send
 ```
 
 ## 6. What this validates

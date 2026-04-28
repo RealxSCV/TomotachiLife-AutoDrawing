@@ -114,6 +114,32 @@ Path note:
 - Replace `<your-serial-port>` with your own serial device, such as `/dev/cu.usbserial-0001`
 - If `pio` is already in your shell `PATH`, you can use `pio ...`; otherwise use `~/.platformio/penv/bin/pio ...`
 
+### One-click launch on macOS / macOS 一键启动
+
+You can now start the app by either:
+
+- double-clicking [`Start Friend Maker.command`](./Start%20Friend%20Maker.command)
+- or running:
+
+```bash
+cd /path/to/friendmaker
+./Start\ Friend\ Maker.command
+```
+
+This launcher will:
+
+- detect `Node.js`, `npm`, `Python 3`, and `PlatformIO`
+- try to install missing software automatically
+- install dependencies automatically when needed
+- start the local web UI
+- open `http://127.0.0.1:4307` automatically
+
+Notes:
+
+- if `Homebrew` is missing, the launcher will ask whether it should install it
+- the Terminal window may request your password during first-time software installation
+- keep the Terminal window open while using the app
+
 ### 1. Install dependencies / 安装依赖
 
 ```bash
