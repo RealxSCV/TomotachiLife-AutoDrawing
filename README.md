@@ -10,7 +10,7 @@
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-black.svg)
 ![Hardware](https://img.shields.io/badge/hardware-ESP32--WROOM--32-orange.svg)
-![Status](https://img.shields.io/badge/status-prototype-yellow.svg)
+![Status](https://img.shields.io/badge/status-alpha-yellow.svg)
 
 ## Compatibility / 平台支持
 
@@ -73,17 +73,17 @@ Image Input
 
 ## Current Workflow / 当前主流程
 
-1. 在网页中导入图片
-2. 选择画笔大小与绘制模式
-3. 生成预览与绘制命令
-4. 连接 ESP32 与 Switch
-5. 一键开始绘制
-
-当前最稳定的使用顺序：
+当前最稳定、也是文档默认采用的使用顺序：
 
 1. `刷入固件`
 2. `手柄测试`
 3. `脚本生成`
+
+对应的实际动作是：
+
+1. 在 `刷入固件` 页更新推荐固件并确认串口正常
+2. 在 `手柄测试` 页完成蓝牙连接、按钮和方向测试
+3. 回到 `脚本生成` 页导入图片、检查预览并正式开始绘制
 
 ## Modes / 绘制模式
 
@@ -221,8 +221,9 @@ http://127.0.0.1:4307
 
 - 导入图片
 - 选择画笔大小
-- 选择单色 / 多色 / 官方色
+- 选择单色 / 官方色
 - 生成预览与命令
+- 查看官方色盘预览、统计信息与执行状态
 - 一键开始绘制
 
 ### Firmware Flash / 刷入固件
@@ -230,6 +231,7 @@ http://127.0.0.1:4307
 - 枚举串口
 - 调用本机 PlatformIO
 - 编译并刷入 ESP32 固件
+- 返回刷写结果与滚动日志
 
 ### Controller Test / 手柄测试
 
@@ -237,6 +239,7 @@ http://127.0.0.1:4307
 - 重置蓝牙
 - 单步测试按钮 / 方向键 / 摇杆
 - 查看 HID 连接状态
+- 发送自定义测试命令与查看滚动日志
 
 ## Repository Layout / 仓库结构
 
@@ -279,15 +282,17 @@ docs/media/          README 展示图片与视频
 
 ## Development Status / 当前状态
 
-当前仓库已经跑通的关键链路：
+当前仓库已经具备可试用的闭环：
 
 ```text
-Import image
+Flash firmware in Web UI
+  -> test controller connection
+  -> import image
   -> pixelize / quantize / background removal
   -> generate command script
   -> serial ACK sender
   -> ESP32 protocol parser
-  -> Bluetooth Classic Switch controller emulation
+  -> Bluetooth Classic Switch controller output
   -> in-game drawing
 ```
 

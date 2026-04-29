@@ -11,41 +11,95 @@
       name="keywords"
       content="Friend Maker, 朋友制作器, Tomodachi Life, 朋友收集梦想生活, Nintendo Switch auto draw, ESP32 Pro Controller emulator, pixel art drawing automation"
     />
-    <title>朋友制作器 | Friend Maker for Tomodachi Life（朋友收集：梦想生活）</title>
+    <title>朋友制作器 / Friend Maker | Tomodachi Life 自动绘制工具</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="shell">
       <header class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">朋友制作器</p>
-          <h1>专为 Switch 版《朋友收集：梦想生活》 / Tomodachi Life 制作</h1>
+          <div class="hero-topline">
+            <span class="hero-tag">Switch 版《朋友收集：梦想生活》 / Tomodachi Life</span>
+          </div>
+          <h1 class="hero-brand">朋友制作器 / Friend Maker</h1>
+          <p class="hero-body">
+            自动绘画的基本原理，是通过数据线连接电脑与 ESP32 开发板，先刷入固定固件，再由电脑发送绘图指令，开发板按规律模拟
+            Switch 手柄输入完成自动绘画。
+          </p>
           <p class="subcopy">
-            现在这版 Web UI 已经覆盖三块核心工作：生成绘图脚本、刷入 ESP32 固件，以及进行手柄动作测试，面向
-            Switch 版《朋友收集：梦想生活》（Tomodachi Life）的自动绘制流程持续完善中。
+            推荐顺序是先刷固件，再做手柄测试，最后回到“脚本生成”页导入图片并先点“仅生成命令”。手柄测试未通过时，不允许开始正式绘制。开始前请确认
+            Switch 处于初始绘画页面、画笔停在画布中心、侧边色彩槽保持默认；彩色模式请使用“官方色绘制”，自定义调色板暂未开放。建议首次先用简单图和大画笔测试，开始绘制后不要再操作手柄或触碰屏幕，以免错位。
           </p>
         </div>
-        <div class="hero-badge">
-          <span>Current Mode</span>
-          <strong>Studio + Flash + Test</strong>
+        <div class="hero-side">
+          <div class="hero-badge">
+            <span>Current Mode</span>
+            <strong>Studio + Flash + Test</strong>
+          </div>
+          <section class="workflow-card" aria-label="推荐流程">
+            <span class="workflow-label">推荐流程</span>
+            <ol class="workflow-list">
+              <li>
+                <strong>先刷固件</strong>
+                <span>先到“刷入固件”更新 ESP32，确保后面的蓝牙连接和按键测试基于最新版本进行。</span>
+              </li>
+              <li>
+                <strong>再测连接</strong>
+                <span>进入“手柄测试”确认开发板已经能被 Switch 正常识别、连接，并进入可发送状态。</span>
+              </li>
+              <li>
+                <strong>最后导图</strong>
+                <span>确认连接没问题后，再回到“脚本生成”输入图片、调整参数并开始正式绘制。</span>
+              </li>
+            </ol>
+          </section>
         </div>
       </header>
 
-      <nav class="page-nav">
-        <button class="page-tab active" data-page-target="studio">脚本生成</button>
-        <button class="page-tab" data-page-target="firmware">刷入固件</button>
-        <button class="page-tab" data-page-target="controller">手柄测试</button>
-      </nav>
+      <div class="page-nav-wrap">
+        <nav class="page-nav" aria-label="功能导航">
+          <button class="page-tab active" data-page-target="studio" type="button">
+            <span class="page-tab-title">脚本生成</span>
+            <small class="page-tab-meta">导图、预览、执行</small>
+          </button>
+          <button class="page-tab" data-page-target="firmware" type="button">
+            <span class="page-tab-title">刷入固件</span>
+            <small class="page-tab-meta">编译、烧录、排错</small>
+          </button>
+          <button class="page-tab" data-page-target="controller" type="button">
+            <span class="page-tab-title">手柄测试</span>
+            <small class="page-tab-meta">连接、状态、单步动作</small>
+          </button>
+        </nav>
+      </div>
 
       <section class="author-notice" aria-label="作者说明">
-        <strong>作者说明</strong>
-        <p>
-          来源作者：小红书作者 <b>惜羽拓麻镇</b>。本项目采用 <b>GPL-3.0-or-later</b> 开源；如公开转发、转载或二次分享，建议注明作者名称
-          <b>惜羽拓麻镇</b>，并附上原始发布地址。
-        </p>
+        <div class="author-notice-copy">
+          <strong>作者说明</strong>
+          <p>
+            来源作者：小红书作者 <b>惜羽拓麻镇</b>。本项目采用 <b>GPL-3.0-or-later</b> 开源；如公开转发、转载或二次分享，建议注明作者名称
+            <b>惜羽拓麻镇</b>，并附上原始发布地址。
+          </p>
+        </div>
+        <div class="author-pill-row" aria-label="项目信息">
+          <span class="author-pill">GPL-3.0-or-later</span>
+          <span class="author-pill subtle">来源作者：惜羽拓麻镇</span>
+        </div>
       </section>
 
       <section class="page page-active" data-page="studio">
+        <section class="page-intro">
+          <div class="page-intro-copy">
+            <p class="page-kicker">脚本生成</p>
+            <h2>把图片处理、像素预览和执行放在同一条视线里</h2>
+            <p>这里适合连续完成“导入图片、调整参数、确认预览、开始绘制”这一整段流程。</p>
+          </div>
+          <div class="page-step-row" aria-label="脚本生成步骤">
+            <span class="page-step">1. 导入图片</span>
+            <span class="page-step">2. 调整缩放和位置</span>
+            <span class="page-step">3. 检查预览后开始绘制</span>
+          </div>
+        </section>
         <main class="grid">
           <section class="panel panel-form">
             <div class="panel-head">
@@ -344,6 +398,18 @@
       </section>
 
       <section class="page" data-page="firmware">
+        <section class="page-intro">
+          <div class="page-intro-copy">
+            <p class="page-kicker">刷入固件</p>
+            <h2>把环境选择、烧录结果和日志排查拆得更清楚</h2>
+            <p>这页只负责 ESP32 固件编译和刷写，适合在设备需要更新时单独完成，不打断主绘制流程。</p>
+          </div>
+          <div class="page-step-row" aria-label="刷入固件步骤">
+            <span class="page-step">1. 选择目标环境</span>
+            <span class="page-step">2. 确认串口设备</span>
+            <span class="page-step">3. 编译并刷入固件</span>
+          </div>
+        </section>
         <main class="firmware-grid">
           <section class="panel">
             <div class="panel-head">
@@ -424,6 +490,18 @@
       </section>
 
       <section class="page" data-page="controller">
+        <section class="page-intro">
+          <div class="page-intro-copy">
+            <p class="page-kicker">手柄测试</p>
+            <h2>先确认连接状态，再做单步动作验证</h2>
+            <p>这里把连接、可发现、认证、配对和动作测试拆开显示，方便先排链路问题，再排按键动作。</p>
+          </div>
+          <div class="page-step-row" aria-label="手柄测试步骤">
+            <span class="page-step">1. 刷新并连接手柄</span>
+            <span class="page-step">2. 确认状态变为可发送</span>
+            <span class="page-step">3. 做方向和按钮测试</span>
+          </div>
+        </section>
         <main class="controller-grid">
           <section class="panel">
             <div class="panel-head">

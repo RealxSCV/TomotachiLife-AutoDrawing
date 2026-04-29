@@ -209,6 +209,8 @@ const STUDIO_IMAGE_OFFSET_LIMITS = {
   max: 100,
 };
 
+const VALID_PAGE_NAMES = new Set(["studio", "firmware", "controller"]);
+
 els.pageTabs.forEach((button) => {
   button.addEventListener("click", () => {
     switchPage(button.dataset.pageTarget ?? "studio");
@@ -816,17 +818,59 @@ els.controllerClearLogButton.addEventListener("click", () => {
   clearLog(els.controllerLogOutput);
 });
 
-function switchPage(pageName) {
-  state.activePage = pageName;
+function switchPage(pageName, options = {}) {
+  const { updateHash = true, scrollToPage = true } = options;
+  const nextPageName = normalizePageName(pageName);
+  state.activePage = nextPageName;
 
   els.pageTabs.forEach((button) => {
-    button.classList.toggle("active", button.dataset.pageTarget === pageName);
+    const isActive = button.dataset.pageTarget === nextPageName;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
   });
 
   els.pages.forEach((page) => {
-    page.classList.toggle("page-active", page.dataset.page === pageName);
+    const isActive = page.dataset.page === nextPageName;
+    page.classList.toggle("page-active", isActive);
+    page.hidden = !isActive;
   });
+
+  if (updateHash) {
+    const nextHash = `#${nextPageName}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, "", nextHash);
+    }
+  }
+
+  if (scrollToPage) {
+    const activePage = findPageElement(nextPageName);
+    const scrollTarget = activePage?.querySelector(".page-intro") ?? activePage;
+    scrollTarget?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
 }
+
+function findPageElement(pageName) {
+  return els.pages.find((page) => page.dataset.page === pageName) ?? null;
+}
+
+function normalizePageName(pageName) {
+  const normalizedPageName = typeof pageName === "string" ? pageName.trim() : "";
+  return VALID_PAGE_NAMES.has(normalizedPageName) ? normalizedPageName : "studio";
+}
+
+window.addEventListener("hashchange", () => {
+  const nextPageName = normalizePageName(window.location.hash.slice(1));
+
+  if (nextPageName !== state.activePage) {
+    switchPage(nextPageName, {
+      updateHash: false,
+      scrollToPage: false,
+    });
+  }
+});
 
 function setStudioBusy(isBusy) {
   state.studio.busy = isBusy;
@@ -1865,7 +1909,11 @@ function loadImageElement(dataUrl) {
 }
 
 async function init() {
-  switchPage("studio");
+  const initialPageName = normalizePageName(window.location.hash.slice(1));
+  switchPage(initialPageName, {
+    updateHash: window.location.hash.length > 0,
+    scrollToPage: window.location.hash.length > 0,
+  });
   state.studio.canvasSize = Number(els.sizeSelect.value || state.studio.canvasSize);
   state.studio.brushSize = Number(els.brushSizeSelect.value || state.studio.brushSize);
   state.studio.imageScalePercent = normalizeStudioNumericValue(
