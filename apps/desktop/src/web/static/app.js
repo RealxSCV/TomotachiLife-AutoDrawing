@@ -2915,6 +2915,10 @@ function clearLog(element) {
 function getErrorMessage(error) {
   const message = error instanceof Error ? error.message : String(error);
 
+  if (/Cannot lock port|exclusively lock port|port is busy|Resource temporarily unavailable/i.test(message)) {
+    return "串口当前被其他进程占用，常见原因是另一个 Friend Maker 实例或串口工具仍保持连接。请先断开旧连接，或完全退出占用程序后再重试。";
+  }
+
   if (/controller input report failed/i.test(message)) {
     return `${message}。请重新连接手柄，或改用更慢的输入时序后再开始。`;
   }
