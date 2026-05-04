@@ -82,4 +82,16 @@ test("controller firmware keeps bluetooth identity stable and waits for host HID
     firmwareSource,
     /ESP_BT_GAP_AUTH_CMPL_EVT[\s\S]*attemptVirtualCablePlug\(lastPeerAddress_, "auth-complete"\)/u,
   );
+  assert.match(
+    firmwareSource,
+    /shouldReconnectLastPeer = reconnectLastPeer && hasPeerAddress_[\s\S]*reconnectLastPeerOnRegister_ = shouldReconnectLastPeer/u,
+  );
+  assert.match(
+    firmwareSource,
+    /reconnectLastPeerOnRegister_ && hasPeerAddress_[\s\S]*attemptVirtualCablePlug\(lastPeerAddress_, "register-app-last-peer"\)/u,
+  );
+  assert.doesNotMatch(
+    firmwareSource,
+    /else if \(hasPeerAddress_\)[\s\S]*attemptVirtualCablePlug\(lastPeerAddress_, "register-app-last-peer"\)/u,
+  );
 });

@@ -21,7 +21,10 @@ bool MockControllerTransport::moveDirection(
   return true;
 }
 
-bool MockControllerTransport::resetConnection() { return true; }
+bool MockControllerTransport::resetConnection(bool reconnectLastPeer) {
+  (void)reconnectLastPeer;
+  return true;
+}
 
 void MockControllerTransport::printStatus(Print &output) const {
   output.print("INFO transport=");

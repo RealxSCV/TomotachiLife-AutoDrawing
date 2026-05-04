@@ -421,9 +421,9 @@ bool SwitchController::configureBasicPaletteSlot(int index, uint8_t row, uint8_t
   return true;
 }
 
-bool SwitchController::resetBluetooth() {
+bool SwitchController::resetBluetooth(bool reconnectLastPeer) {
   waitUntilReady();
-  return transport_.resetConnection();
+  return transport_.resetConnection(reconnectLastPeer);
 }
 
 void SwitchController::pause() { paused_ = true; }

@@ -126,7 +126,7 @@ test("shouldReuseExistingControllerConnection keeps active bluetooth sessions in
       authValue: false,
       discoverableValue: true,
     }),
-    true,
+    false,
   );
   assert.equal(
     shouldReuseExistingControllerConnection({
@@ -168,6 +168,21 @@ test("controller status updates also resync the controller action buttons", asyn
 
   assert.match(
     appSource,
-    /state\.controller\.status\.reconnectRecommendedValue === true[\s\S]*runControllerCommands\(\["BT RESET", "I"\], "自动恢复手柄连接"\)/u,
+    /state\.controller\.status\.reconnectRecommendedValue === true[\s\S]*BT RESET LAST-PEER[\s\S]*自动恢复手柄连接/u,
+  );
+
+  assert.match(
+    appSource,
+    /Date\.now\(\) > controllerStatusPollDeadlineMs[\s\S]*await handleControllerStatusPollTimeout\(\)/u,
+  );
+
+  assert.match(
+    appSource,
+    /controllerStatusTimeoutRecoveryAttempted = true[\s\S]*等待连接超过 45 秒，自动重置蓝牙并重试一次。[\s\S]*BT RESET LAST-PEER[\s\S]*自动恢复手柄连接/u,
+  );
+
+  assert.match(
+    appSource,
+    /if \(payload\) \{[\s\S]*startControllerStatusPolling\(\);[\s\S]*\} else \{[\s\S]*setControllerRecoveryFailedStatus\(/u,
   );
 });

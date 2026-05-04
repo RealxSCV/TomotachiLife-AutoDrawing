@@ -386,13 +386,16 @@ bool executeCommand(const String &line, SwitchController &controller, String &er
     return true;
   }
 
-  if (line == "BT RESET") {
-    if (!controller.resetBluetooth()) {
+  if (line == "BT RESET" || line == "BT RESET LAST-PEER") {
+    const bool reconnectLastPeer = line == "BT RESET LAST-PEER";
+    if (!controller.resetBluetooth(reconnectLastPeer)) {
       error = "bt reset failed";
       return false;
     }
 
-    Serial.println("INFO action=bt-reset");
+    Serial.printf(
+        "INFO action=bt-reset reconnect_last_peer=%s\n",
+        reconnectLastPeer ? "true" : "false");
     return true;
   }
 

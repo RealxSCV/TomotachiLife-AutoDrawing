@@ -11,7 +11,7 @@ class ClassicBtControllerTransport : public ControllerTransport {
   void begin() override;
   bool pressButtons(uint32_t buttonsMask, uint16_t holdMs, uint16_t settleMs) override;
   bool moveDirection(int x, int y, uint16_t holdMs, uint16_t settleMs) override;
-  bool resetConnection() override;
+  bool resetConnection(bool reconnectLastPeer = false) override;
   void printStatus(Print &output) const override;
   const char *name() const override;
 
@@ -82,6 +82,7 @@ class ClassicBtControllerTransport : public ControllerTransport {
   volatile uint8_t lastInputReportReason_ = 0;
   uint8_t lastPeerAddress_[6] = {};
   bool hasPeerAddress_ = false;
+  bool reconnectLastPeerOnRegister_ = false;
   uint32_t ignoredReportCount_ = 0;
   uint8_t lastIgnoredReportId_ = 0;
   uint16_t lastIgnoredReportLen_ = 0;

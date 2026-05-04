@@ -286,9 +286,7 @@ bool ClassicBtControllerTransport::initializeNvsAndBaseAddress() {
     }
   }
 
-  if (baseMacSource == "nvs") {
-    nvs_close(handle);
-  } else if (err == ESP_OK || shouldPersistDerivedMac) {
+  if (err == ESP_OK || shouldPersistDerivedMac) {
     nvs_close(handle);
   }
 
@@ -432,6 +430,7 @@ void ClassicBtControllerTransport::clearConnectionState() {
   lastSendReportId_ = 0;
   sendReportFailureCount_ = 0;
   lastDropReason_ = "none";
+  reconnectLastPeerOnRegister_ = false;
 }
 
 bool ClassicBtControllerTransport::shutdownClassicBluetooth() {
@@ -667,19 +666,26 @@ bool ClassicBtControllerTransport::moveDirection(
   return ok;
 }
 
-bool ClassicBtControllerTransport::resetConnection() {
-  Serial.println("INFO bt reset requested mode=stack-restart");
+bool ClassicBtControllerTransport::resetConnection(bool reconnectLastPeer) {
+  const bool shouldReconnectLastPeer = reconnectLastPeer && hasPeerAddress_;
+  Serial.printf(
+      "INFO bt reset requested mode=stack-restart reconnect_last_peer=%s\n",
+      boolName(shouldReconnectLastPeer));
 
   shutdownClassicBluetooth();
 
   clearInputs();
+  reconnectLastPeerOnRegister_ = shouldReconnectLastPeer;
 
   if (!initializeClassicBluetooth()) {
+    reconnectLastPeerOnRegister_ = false;
     Serial.printf("WARN bt reset restart failed step=%s err=%s\n", initStep_, initError_);
     return false;
   }
 
-  Serial.println("INFO bt reset completed mode=stack-restart");
+  Serial.printf(
+      "INFO bt reset completed mode=stack-restart reconnect_last_peer=%s\n",
+      boolName(reconnectLastPeerOnRegister_));
   return true;
 }
 
@@ -1210,7 +1216,15 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
         }
 
         if (param->register_app.in_use && param->register_app.bd_addr != nullptr) {
+          reconnectLastPeerOnRegister_ = false;
           attemptVirtualCablePlug(param->register_app.bd_addr, "register-app");
+        } else if (reconnectLastPeerOnRegister_ && hasPeerAddress_) {
+          // Only explicit recovery resets should preferentially reconnect the
+          // previously authenticated host; ordinary pairing stays neutral.
+          reconnectLastPeerOnRegister_ = false;
+          attemptVirtualCablePlug(lastPeerAddress_, "register-app-last-peer");
+        } else {
+          reconnectLastPeerOnRegister_ = false;
         }
       }
       break;
@@ -1369,7 +1383,10 @@ bool ClassicBtControllerTransport::moveDirection(
   return false;
 }
 
-bool ClassicBtControllerTransport::resetConnection() { return false; }
+bool ClassicBtControllerTransport::resetConnection(bool reconnectLastPeer) {
+  (void)reconnectLastPeer;
+  return false;
+}
 
 void ClassicBtControllerTransport::printStatus(Print &output) const {
   output.println("INFO bt_mode=classic-bt-disabled");

@@ -103,8 +103,7 @@ export function shouldReuseExistingControllerConnection(status) {
   return (
     status?.readyValue === true ||
     status?.connectedValue === true ||
-    status?.authValue === true ||
-    status?.discoverableValue === true
+    status?.authValue === true
   );
 }
 

@@ -356,6 +356,7 @@ let firmwareFlashPollTimer = null;
 let controllerStatusPollTimer = null;
 let controllerStatusPollDeadlineMs = 0;
 let controllerStatusPollInFlight = false;
+let controllerStatusTimeoutRecoveryAttempted = false;
 let studioPreviewRefreshTimer = null;
 let studioGenerateRequestSerial = 0;
 let studioPreviewBoundsRequestSerial = 0;
@@ -1766,6 +1767,7 @@ function stopWindowsSerialDriverPolling() {
 
 els.controllerInfoButton.addEventListener("click", async () => {
   state.controller.autoReconnectAttempted = false;
+  controllerStatusTimeoutRecoveryAttempted = false;
   setControllerPendingStatus({
     title: "正在检查当前手柄状态",
     detail: "正在读取开发板当前蓝牙状态；如果已经连上 Switch，会直接复用当前连接。",
@@ -1778,7 +1780,7 @@ els.controllerInfoButton.addEventListener("click", async () => {
       els.controllerLogOutput,
       state.controller.status.readyValue === true
         ? "检测到手柄已经连接，跳过蓝牙重置。"
-        : "检测到开发板已经在广播或握手中，跳过蓝牙重置并继续等待连接完成。",
+        : "检测到开发板已经在握手中，跳过蓝牙重置并继续等待连接完成。",
     );
     startControllerStatusPolling();
     return;
@@ -1802,6 +1804,7 @@ els.controllerInfoButton.addEventListener("click", async () => {
 
 els.controllerResetButton.addEventListener("click", async () => {
   state.controller.autoReconnectAttempted = false;
+  controllerStatusTimeoutRecoveryAttempted = false;
   setControllerPendingStatus({
     title: "正在重置手柄蓝牙",
     detail: "正在重启蓝牙协议栈并读取最新状态，请稍等片刻。",
@@ -2455,6 +2458,66 @@ function isControllerReadyForStudio() {
   return state.controller.status.readyValue === true;
 }
 
+function setControllerRecoveryFailedStatus(detail) {
+  setControllerStatus({
+    tone: "warning",
+    pill: "需重试",
+    title: "连接恢复失败",
+    detail,
+  });
+}
+
+function isControllerConnectionStillInProgress(status = state.controller.status) {
+  return (
+    status?.readyValue !== true &&
+    status?.tone !== "error" &&
+    (status?.connectedValue === true ||
+      status?.authValue === true ||
+      status?.discoverableValue === true)
+  );
+}
+
+async function handleControllerStatusPollTimeout() {
+  stopControllerStatusPolling();
+
+  if (
+    isControllerConnectionStillInProgress() &&
+    !controllerStatusTimeoutRecoveryAttempted
+  ) {
+    controllerStatusTimeoutRecoveryAttempted = true;
+    appendLog(
+      els.controllerLogOutput,
+      "等待连接超过 45 秒，自动重置蓝牙并重试一次。",
+    );
+    setControllerPendingStatus({
+      title: "正在自动恢复手柄连接",
+      detail: "开发板长时间停留在广播或握手状态，正在重置蓝牙并重新进入可发现状态。",
+    });
+
+    const payload = await runControllerCommands(
+      ["BT RESET LAST-PEER", "I"],
+      "自动恢复手柄连接",
+    );
+
+    if (payload) {
+      startControllerStatusPolling();
+    } else {
+      setControllerRecoveryFailedStatus(
+        "自动恢复没有完成。请重新点击“连接手柄”；如果你是在换一台 Switch 配对，当前不会再默认回连旧主机。",
+      );
+    }
+    return;
+  }
+
+  appendLog(
+    els.controllerLogOutput,
+    "连接等待超时。请确认 Switch 停在“更改握法/顺序”页面，然后重新点击“连接手柄”；如果还是卡住，再按一下开发板上的 EN 键后重试。",
+  );
+  setControllerRecoveryFailedStatus(
+    "开发板长时间停留在广播或握手状态。请确认 Switch 停在“更改握法/顺序”页面，然后重新点击“连接手柄”；如果还是卡住，再按一下开发板上的 EN 键后重试。",
+  );
+}
+
 async function requestControllerStatus({ logErrors = false } = {}) {
   if (!state.selectedPortPath) {
     return false;
@@ -2517,7 +2580,7 @@ async function pollControllerStatus() {
   }
 
   if (controllerStatusPollDeadlineMs > 0 && Date.now() > controllerStatusPollDeadlineMs) {
-    stopControllerStatusPolling();
+    await handleControllerStatusPollTimeout();
     return;
   }
 
@@ -2547,10 +2610,17 @@ async function pollControllerStatus() {
         detail: "检测到当前连接容易立刻断联，正在重置蓝牙并重新进入可发现状态。",
       });
 
-      const payload = await runControllerCommands(["BT RESET", "I"], "自动恢复手柄连接");
+      const payload = await runControllerCommands(
+        ["BT RESET LAST-PEER", "I"],
+        "自动恢复手柄连接",
+      );
 
       if (payload) {
         startControllerStatusPolling();
+      } else {
+        setControllerRecoveryFailedStatus(
+          "自动恢复没有完成。请重新点击“连接手柄”；如果还是容易断联，再按一下开发板上的 EN 键后重试。",
+        );
       }
 
       return;
