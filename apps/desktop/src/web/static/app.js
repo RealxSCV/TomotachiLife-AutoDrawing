@@ -59,8 +59,8 @@ const state = {
     installLineCount: 0,
   },
   sharedTiming: {
-    inputDelay: 100,
-    buttonPressDuration: 100,
+    inputDelay: 45,
+    buttonPressDuration: 65,
     homeDuration: 1800,
   },
   studio: {
@@ -92,8 +92,8 @@ const state = {
       baudRate: 115200,
       ackTimeoutMs: 2000,
       commandRetryCount: 1,
-      inputDelay: 100,
-      buttonPressDuration: 100,
+      inputDelay: 45,
+      buttonPressDuration: 65,
       homeDuration: 1800,
       templateId: "none",
       templateLabel: "无模板（正方形）",
@@ -183,10 +183,10 @@ const state = {
     benchmark: {
       status: "idle",
       detail:
-        "点击“运行标准方圈”或“运行长程方圈”后，这里会显示本次 timing、理论动作耗时、实测耗时和平均每动作耗时。",
+        "点击“运行标准方圈”“运行长程方圈”或“运行 6x128 点阵”后，这里会显示本次 timing、理论动作耗时、实测耗时和平均每动作耗时。",
       label: "标准扩张方圈",
-      buttonPressDuration: 100,
-      inputDelay: 100,
+      buttonPressDuration: 65,
+      inputDelay: 45,
       homeDuration: 1800,
       commandCount: 0,
       measuredMs: null,
@@ -325,6 +325,7 @@ const els = {
   timingActionButtons: [...document.querySelectorAll("[data-timing-action]")],
   timingBenchmarkButton: document.getElementById("timing-benchmark-button"),
   timingLongBenchmarkButton: document.getElementById("timing-long-benchmark-button"),
+  timingReproBenchmarkButton: document.getElementById("timing-repro-benchmark-button"),
   timingBenchmarkCard: document.getElementById("timing-benchmark-card"),
   timingBenchmarkPill: document.getElementById("timing-benchmark-pill"),
   timingBenchmarkTitle: document.getElementById("timing-benchmark-title"),
@@ -372,13 +373,13 @@ const STUDIO_IMAGE_OFFSET_LIMITS = {
 
 const SHARED_TIMING_STORAGE_KEY = "friend-maker.shared-timing";
 const DEFAULT_SHARED_TIMING = {
-  inputDelay: 100,
-  buttonPressDuration: 100,
+  inputDelay: 45,
+  buttonPressDuration: 65,
   homeDuration: 1800,
 };
 const SHARED_TIMING_LIMITS = {
-  inputDelay: { min: 60, max: 220, step: 10 },
-  buttonPressDuration: { min: 60, max: 160, step: 5 },
+  inputDelay: { min: 16, max: 100, step: 1 },
+  buttonPressDuration: { min: 16, max: 100, step: 1 },
 };
 const TIMING_BENCHMARK_DIRECTIONS = [
   { dx: 1, dy: 0 },
@@ -390,6 +391,7 @@ const TIMING_BENCHMARK_MODES = {
   standard: {
     buttonLabel: "标准方圈",
     title: "标准扩张方圈",
+    pattern: "square-spiral",
     spiralDepth: 6,
     confirmMessage:
       "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。现在开始运行标准扩张方圈吗？",
@@ -401,6 +403,7 @@ const TIMING_BENCHMARK_MODES = {
   long: {
     buttonLabel: "长程方圈",
     title: "长程扩张方圈",
+    pattern: "square-spiral",
     spiralDepth: 12,
     confirmMessage:
       "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。现在开始运行长程扩张方圈吗？",
@@ -408,6 +411,19 @@ const TIMING_BENCHMARK_MODES = {
       "正在发送长程扩张方圈，请重点观察累计漂移、拐角转向是否开始失真，以及长时间动作后有没有越来越明显的漏笔或跳笔。",
     successDetail:
       "长程扩张方圈已经跑完。请重点看长时间累计后有没有漂移，以及方圈是否还能保持规整，而不只是看它是不是更快。",
+  },
+  repro: {
+    buttonLabel: "6x128 点阵",
+    title: "6x128 点阵复现基准",
+    pattern: "dot-matrix",
+    rowCount: 6,
+    columnCount: 128,
+    confirmMessage:
+      "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。这个基准会连续画 6 行 x 128 点，共 768 次落笔、1535 条动作，专门复现长直线和蛇形换行后的慢性偏移。现在开始运行 6x128 点阵复现基准吗？",
+    runningDetail:
+      "正在发送 6x128 点阵复现基准，请重点观察每行后半段是否开始飘、换行后首点是否错位，以及长时间连续按 A 后有没有漏点、断点或慢性累积偏移。",
+    successDetail:
+      "6x128 点阵复现基准已经跑完。请重点看长直线末段、蛇形换行处和最后几行是否仍然整齐，这一档更接近你之前遇到的真实偏移场景。",
   },
 };
 
@@ -1881,6 +1897,16 @@ els.timingLongBenchmarkButton.addEventListener("click", async () => {
   await runTimingBenchmark("long");
 });
 
+els.timingReproBenchmarkButton.addEventListener("click", async () => {
+  const shouldRun = window.confirm(TIMING_BENCHMARK_MODES.repro.confirmMessage);
+
+  if (!shouldRun) {
+    return;
+  }
+
+  await runTimingBenchmark("repro");
+});
+
 els.timingClearLogButton.addEventListener("click", () => {
   clearLog(els.timingLogOutput);
 });
@@ -3033,6 +3059,7 @@ function syncTimingLabUi() {
   });
   els.timingBenchmarkButton.disabled = !canSendTimingCommands;
   els.timingLongBenchmarkButton.disabled = !canSendTimingCommands;
+  els.timingReproBenchmarkButton.disabled = !canSendTimingCommands;
 
   if (!hasPort) {
     els.timingStatusHint.textContent = "请先选择一个串口设备，再开始试按或测速。";
@@ -3041,7 +3068,7 @@ function syncTimingLabUi() {
       `当前会先下发 ${buildSharedTimingConfigCommand()}。开始前请先到“手柄测试”页把手柄连接到“已就绪”。`;
   } else {
     els.timingStatusHint.textContent =
-      `当前会先下发 ${buildSharedTimingConfigCommand()}。快速调试、标准方圈和长程方圈都会沿用这组 timing。建议测速时切到画笔工具和 1 号笔。`;
+      `当前会先下发 ${buildSharedTimingConfigCommand()}。快速调试、标准方圈、长程方圈和 6x128 点阵都会沿用这组 timing。建议测速时切到画笔工具和 1 号笔。`;
   }
 
   renderTimingBenchmarkResult();
@@ -3199,11 +3226,11 @@ async function runTimingLabCommands(commands, label) {
   return result;
 }
 
-function buildTimingBenchmarkCommands(mode) {
+function buildSquareSpiralBenchmarkCommands(spiralDepth) {
   const commands = ["P"];
   let directionIndex = 0;
 
-  for (let length = 1; length <= mode.spiralDepth; length += 1) {
+  for (let length = 1; length <= spiralDepth; length += 1) {
     for (let repeat = 0; repeat < 2; repeat += 1) {
       const direction = TIMING_BENCHMARK_DIRECTIONS[directionIndex % TIMING_BENCHMARK_DIRECTIONS.length];
 
@@ -3221,6 +3248,38 @@ function buildTimingBenchmarkCommands(mode) {
   }
 
   return commands;
+}
+
+function buildDotMatrixBenchmarkCommands(rowCount, columnCount) {
+  if (rowCount <= 0 || columnCount <= 0) {
+    return [];
+  }
+
+  const commands = ["P"];
+
+  for (let row = 0; row < rowCount; row += 1) {
+    const horizontalStep = row % 2 === 0 ? 1 : -1;
+
+    for (let column = 1; column < columnCount; column += 1) {
+      commands.push(`M ${horizontalStep} 0`);
+      commands.push("P");
+    }
+
+    if (row < rowCount - 1) {
+      commands.push("M 0 1");
+      commands.push("P");
+    }
+  }
+
+  return commands;
+}
+
+function buildTimingBenchmarkCommands(mode) {
+  if (mode.pattern === "dot-matrix") {
+    return buildDotMatrixBenchmarkCommands(mode.rowCount ?? 0, mode.columnCount ?? 0);
+  }
+
+  return buildSquareSpiralBenchmarkCommands(mode.spiralDepth ?? 0);
 }
 
 function summarizeTimingDeviceLines(lines) {

@@ -17,9 +17,9 @@ function makeProfile(overrides: Partial<DrawingProfile> = {}): DrawingProfile {
     canvasHeight: 1,
     resizeMode: "contain",
     cellMoveDuration: 80,
-    inputDelay: 100,
+    inputDelay: 45,
     homeDuration: 1800,
-    buttonPressDuration: 100,
+    buttonPressDuration: 65,
     colorChangeDuration: 450,
     ackTimeoutMs: 2_000,
     commandRetryCount: 1,
@@ -118,8 +118,8 @@ test("/api/generate echoes timing overrides into commands and estimated runtime"
     body: JSON.stringify({
       imageDataUrl,
       previewScale: 1,
-      inputDelay: 160,
-      buttonPressDuration: 60,
+      inputDelay: 30,
+      buttonPressDuration: 40,
     }),
   });
   assert.equal(overrideResponse.ok, true);
@@ -133,13 +133,13 @@ test("/api/generate echoes timing overrides into commands and estimated runtime"
     stats: { estimatedRuntimeMs: number };
   };
 
-  assert.equal(defaultPayload.commands[0], "CFG INPUT 100 100 1800");
-  assert.equal(overridePayload.commands[0], "CFG INPUT 60 160 1800");
-  assert.equal(overridePayload.profile.inputDelay, 160);
-  assert.equal(overridePayload.profile.buttonPressDuration, 60);
+  assert.equal(defaultPayload.commands[0], "CFG INPUT 65 45 1800");
+  assert.equal(overridePayload.commands[0], "CFG INPUT 40 30 1800");
+  assert.equal(overridePayload.profile.inputDelay, 30);
+  assert.equal(overridePayload.profile.buttonPressDuration, 40);
   assert.equal(overridePayload.profile.homeDuration, 1800);
   assert.ok(
-    overridePayload.stats.estimatedRuntimeMs > defaultPayload.stats.estimatedRuntimeMs,
-    "expected slower timing overrides to increase estimated runtime",
+    overridePayload.stats.estimatedRuntimeMs < defaultPayload.stats.estimatedRuntimeMs,
+    "expected faster timing overrides to reduce estimated runtime",
   );
 });

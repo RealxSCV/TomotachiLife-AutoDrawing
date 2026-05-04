@@ -894,12 +894,12 @@ function normalizeImageOffsetPercent(value: unknown, fallback = 0): number {
   return Math.max(-100, Math.min(100, Math.round(value)));
 }
 
-function normalizePositiveDuration(value: unknown, fallback: number): number {
+function normalizeTimingDuration(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
 
-  return Math.max(1, Math.min(60_000, Math.round(value)));
+  return Math.max(16, Math.min(100, Math.round(value)));
 }
 
 function normalizeRecoveryProfileSummary(value: unknown): ExecutionStartProfileSummary {
@@ -1070,8 +1070,8 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
   const profile = {
     ...baseProfile,
     brushSize: normalizeBrushSize(body.brushSize, baseProfile.brushSize),
-    inputDelay: normalizePositiveDuration(body.inputDelay, baseProfile.inputDelay),
-    buttonPressDuration: normalizePositiveDuration(
+    inputDelay: normalizeTimingDuration(body.inputDelay, baseProfile.inputDelay),
+    buttonPressDuration: normalizeTimingDuration(
       body.buttonPressDuration,
       baseProfile.buttonPressDuration,
     ),

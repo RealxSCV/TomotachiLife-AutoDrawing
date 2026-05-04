@@ -72,7 +72,7 @@
           </button>
           <button class="page-tab" data-page-target="timing" type="button">
             <span class="page-tab-title">调试测速</span>
-            <small class="page-tab-meta">Timing、试按、扩张方圈</small>
+            <small class="page-tab-meta">Timing、试按、方圈/点阵</small>
           </button>
         </nav>
       </div>
@@ -738,12 +738,12 @@
           <div class="page-intro-copy">
             <p class="page-kicker">调试测速</p>
             <h2>先把输入时序调稳，再决定能跑多快</h2>
-            <p>这里专门用来调整 inputDelay 和 buttonPressDuration，并用标准与长程扩张方圈去看稳定性、漏笔情况和速度。</p>
+            <p>这里专门用来调整 inputDelay 和 buttonPressDuration，并用方圈基准和 6x128 点阵复现去看稳定性、漏笔情况和速度。</p>
           </div>
           <div class="page-step-row" aria-label="调试测速步骤">
             <span class="page-step">1. 先调稳定性</span>
             <span class="page-step">2. 再调力度</span>
-            <span class="page-step">3. 跑扩张方圈</span>
+            <span class="page-step">3. 跑方圈或 6x128</span>
           </div>
         </section>
         <main class="controller-grid timing-lab-grid">
@@ -781,16 +781,16 @@
 
             <label class="range-row">
               <span>inputDelay</span>
-              <input id="timing-input-delay-range" type="range" min="60" max="220" step="10" value="100" />
+              <input id="timing-input-delay-range" type="range" min="16" max="100" step="1" value="45" />
               <span class="range-number-group">
                 <input
                   id="timing-input-delay-input"
                   class="range-number-input"
                   type="number"
-                  min="60"
-                  max="220"
-                  step="10"
-                  value="100"
+                  min="16"
+                  max="100"
+                  step="1"
+                  value="45"
                 />
                 <span class="range-unit">ms</span>
               </span>
@@ -798,16 +798,16 @@
 
             <label class="range-row">
               <span>buttonPressDuration</span>
-              <input id="timing-button-press-range" type="range" min="60" max="160" step="5" value="100" />
+              <input id="timing-button-press-range" type="range" min="16" max="100" step="1" value="65" />
               <span class="range-number-group">
                 <input
                   id="timing-button-press-input"
                   class="range-number-input"
                   type="number"
-                  min="60"
-                  max="160"
-                  step="5"
-                  value="100"
+                  min="16"
+                  max="100"
+                  step="1"
+                  value="65"
                 />
                 <span class="range-unit">ms</span>
               </span>
@@ -849,25 +849,26 @@
           <section class="panel">
             <div class="panel-head">
               <h2>真实测速</h2>
-              <p>这里提供标准与长程两个扩张方圈档位。标准档更适合快速调参，长程档更适合观察累计漂移、拐角失真和跳过 A 后的缺口。</p>
+              <p>这里提供标准方圈、长程方圈和 6x128 点阵复现三档基准。前两档更适合快速调参和看拐角，6x128 更适合复现长直线、蛇形换行后的慢性偏移。</p>
             </div>
 
             <div class="action-row">
               <button id="timing-benchmark-button" class="primary" type="button">运行标准方圈</button>
               <button id="timing-long-benchmark-button" class="ghost" type="button">运行长程方圈</button>
+              <button id="timing-repro-benchmark-button" class="ghost" type="button">运行 6x128 点阵</button>
             </div>
 
             <div id="timing-benchmark-card" class="firmware-status-card firmware-status-idle timing-benchmark-card">
               <span id="timing-benchmark-pill" class="status-pill">未开始</span>
               <strong id="timing-benchmark-title" class="status-title">等待开始测速</strong>
               <p id="timing-benchmark-detail" class="status-detail">
-                点击“运行标准方圈”或“运行长程方圈”后，这里会显示本次 timing、理论动作耗时、实测耗时和平均每动作耗时。
+                点击“运行标准方圈”“运行长程方圈”或“运行 6x128 点阵”后，这里会显示本次 timing、理论动作耗时、实测耗时和平均每动作耗时。
               </p>
 
               <dl class="firmware-meta-list">
                 <div class="firmware-meta-row">
                   <dt>本次 Timing</dt>
-                  <dd id="timing-benchmark-timing">button 100ms · delay 100ms · home 1800ms</dd>
+                  <dd id="timing-benchmark-timing">button 65ms · delay 45ms · home 1800ms</dd>
                 </div>
                 <div class="firmware-meta-row">
                   <dt>实测总耗时</dt>
