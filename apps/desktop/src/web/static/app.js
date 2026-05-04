@@ -183,8 +183,8 @@ const state = {
     benchmark: {
       status: "idle",
       detail:
-        "点击“运行标准方圈”“运行长程方圈”或“运行 6x128 点阵”后，这里会显示本次 timing、理论动作耗时、实测耗时和平均每动作耗时。",
-      label: "标准扩张方圈",
+        "点任意一个测试后，这里会显示这组参数大概有多快、是否顺利跑完，以及设备最后一次返回了什么。",
+      label: "快速检查（标准方圈）",
       buttonPressDuration: 65,
       inputDelay: 45,
       homeDuration: 1800,
@@ -321,11 +321,19 @@ const els = {
   timingButtonPressRange: document.getElementById("timing-button-press-range"),
   timingButtonPressInput: document.getElementById("timing-button-press-input"),
   timingResetButton: document.getElementById("timing-reset-button"),
+  timingCurrentSummary: document.getElementById("timing-current-summary"),
+  timingInputDelayBadge: document.getElementById("timing-input-delay-badge"),
+  timingInputDelayTip: document.getElementById("timing-input-delay-tip"),
+  timingButtonPressBadge: document.getElementById("timing-button-press-badge"),
+  timingButtonPressTip: document.getElementById("timing-button-press-tip"),
   timingStatusHint: document.getElementById("timing-status-hint"),
   timingActionButtons: [...document.querySelectorAll("[data-timing-action]")],
   timingBenchmarkButton: document.getElementById("timing-benchmark-button"),
   timingLongBenchmarkButton: document.getElementById("timing-long-benchmark-button"),
   timingReproBenchmarkButton: document.getElementById("timing-repro-benchmark-button"),
+  timingBenchmarkStandardSummary: document.getElementById("timing-benchmark-standard-summary"),
+  timingBenchmarkLongSummary: document.getElementById("timing-benchmark-long-summary"),
+  timingBenchmarkReproSummary: document.getElementById("timing-benchmark-repro-summary"),
   timingBenchmarkCard: document.getElementById("timing-benchmark-card"),
   timingBenchmarkPill: document.getElementById("timing-benchmark-pill"),
   timingBenchmarkTitle: document.getElementById("timing-benchmark-title"),
@@ -390,40 +398,40 @@ const TIMING_BENCHMARK_DIRECTIONS = [
 const TIMING_BENCHMARK_MODES = {
   standard: {
     buttonLabel: "标准方圈",
-    title: "标准扩张方圈",
+    title: "快速检查（标准方圈）",
     pattern: "square-spiral",
     spiralDepth: 6,
     confirmMessage:
-      "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。现在开始运行标准扩张方圈吗？",
+      "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。现在开始运行快速检查（标准方圈）吗？",
     runningDetail:
-      "正在发送标准扩张方圈，请观察方圈边缘是否开始变斜、拐角是否失真，以及有没有明显漏笔、跳笔或累计漂移。",
+      "正在跑快速检查（标准方圈）。请观察拐角会不会失真、转向会不会歪，以及有没有明显漏笔、跳笔或漂移。",
     successDetail:
-      "标准扩张方圈已经跑完。它更适合快速比较这组 timing 是更稳了，还是只是更快了。",
+      "快速检查已经跑完。它最适合先判断这组参数到底是更稳了，还是只是看起来更快了。",
   },
   long: {
     buttonLabel: "长程方圈",
-    title: "长程扩张方圈",
+    title: "累计漂移检查（长程方圈）",
     pattern: "square-spiral",
     spiralDepth: 12,
     confirmMessage:
-      "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。现在开始运行长程扩张方圈吗？",
+      "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。现在开始运行累计漂移检查（长程方圈）吗？",
     runningDetail:
-      "正在发送长程扩张方圈，请重点观察累计漂移、拐角转向是否开始失真，以及长时间动作后有没有越来越明显的漏笔或跳笔。",
+      "正在跑累计漂移检查（长程方圈）。请重点看长一点之后会不会越跑越偏，拐角会不会越来越不规整。",
     successDetail:
-      "长程扩张方圈已经跑完。请重点看长时间累计后有没有漂移，以及方圈是否还能保持规整，而不只是看它是不是更快。",
+      "累计漂移检查已经跑完。请重点看长时间累计后有没有偏移，以及方圈是不是还能保持规整。",
   },
   repro: {
-    buttonLabel: "6x128 点阵",
-    title: "6x128 点阵复现基准",
+    buttonLabel: "6 行 x 240",
+    title: "真实长程复现（6 行 x 240 点阵）",
     pattern: "dot-matrix",
     rowCount: 6,
-    columnCount: 128,
+    columnCount: 240,
     confirmMessage:
-      "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。这个基准会连续画 6 行 x 128 点，共 768 次落笔、1535 条动作，专门复现长直线和蛇形换行后的慢性偏移。现在开始运行 6x128 点阵复现基准吗？",
+      "开始前请确认：Switch 已经进入绘画页、当前是画笔工具、最好切到 1 号笔、画笔停在画布中心，并且从现在开始不要再碰手柄或屏幕。这个基准会连续画 6 行 x 240 点，共 1440 次落笔、2879 条动作，专门复现长直线和蛇形换行后的慢性偏移。现在开始运行 6 行 x 240 点阵复现基准吗？",
     runningDetail:
-      "正在发送 6x128 点阵复现基准，请重点观察每行后半段是否开始飘、换行后首点是否错位，以及长时间连续按 A 后有没有漏点、断点或慢性累积偏移。",
+      "正在跑真实长程复现（6 行 x 240 点阵）。请重点观察每行后半段、换行后的首点，以及长时间连续落笔后有没有慢性累积偏移。",
     successDetail:
-      "6x128 点阵复现基准已经跑完。请重点看长直线末段、蛇形换行处和最后几行是否仍然整齐，这一档更接近你之前遇到的真实偏移场景。",
+      "真实长程复现已经跑完。请重点看长直线末段、蛇形换行处和最后几行是否仍然整齐，这一档最接近真实问题场景。",
   },
 };
 
@@ -2981,7 +2989,7 @@ function syncWindowsSerialDriverUi() {
 
 function renderTimingBenchmarkResult() {
   const benchmark = state.timingLab.benchmark;
-  const benchmarkLabel = benchmark.label || "扩张方圈";
+  const benchmarkLabel = benchmark.label || "测试";
   const tone =
     benchmark.status === "running"
       ? "running"
@@ -2992,7 +3000,7 @@ function renderTimingBenchmarkResult() {
           : "idle";
   const pill =
     benchmark.status === "running"
-      ? "测速中"
+      ? "测试中"
       : benchmark.status === "success"
         ? "成功"
         : benchmark.status === "error"
@@ -3005,7 +3013,7 @@ function renderTimingBenchmarkResult() {
         ? `${benchmarkLabel}完成`
         : benchmark.status === "error"
           ? `${benchmarkLabel}失败`
-          : "等待开始测速";
+          : "等待开始测试";
 
   els.timingBenchmarkCard.className = `firmware-status-card timing-benchmark-card firmware-status-${tone}`;
   els.timingBenchmarkPill.textContent = pill;
@@ -3051,6 +3059,27 @@ function syncTimingLabUi() {
   els.timingInputDelayInput.value = String(inputTiming.inputDelay);
   els.timingButtonPressRange.value = String(inputTiming.buttonPressDuration);
   els.timingButtonPressInput.value = String(inputTiming.buttonPressDuration);
+  els.timingCurrentSummary.textContent =
+    `当前会同时用于手柄测试、测速和正式绘制：稳定等待 ${inputTiming.inputDelay}ms · 按键保持 ${inputTiming.buttonPressDuration}ms。`;
+
+  const inputDelayGuide = describeInputDelaySetting(inputTiming.inputDelay);
+  const buttonPressGuide = describeButtonPressSetting(inputTiming.buttonPressDuration);
+  els.timingInputDelayBadge.textContent = inputDelayGuide.badge;
+  els.timingInputDelayTip.textContent = inputDelayGuide.tip;
+  els.timingButtonPressBadge.textContent = buttonPressGuide.badge;
+  els.timingButtonPressTip.textContent = buttonPressGuide.tip;
+  els.timingBenchmarkStandardSummary.textContent = formatTimingBenchmarkSummary(
+    TIMING_BENCHMARK_MODES.standard,
+    inputTiming,
+  );
+  els.timingBenchmarkLongSummary.textContent = formatTimingBenchmarkSummary(
+    TIMING_BENCHMARK_MODES.long,
+    inputTiming,
+  );
+  els.timingBenchmarkReproSummary.textContent = formatTimingBenchmarkSummary(
+    TIMING_BENCHMARK_MODES.repro,
+    inputTiming,
+  );
 
   const canSendTimingCommands = !disabled && hasPort && controllerReady;
 
@@ -3062,13 +3091,13 @@ function syncTimingLabUi() {
   els.timingReproBenchmarkButton.disabled = !canSendTimingCommands;
 
   if (!hasPort) {
-    els.timingStatusHint.textContent = "请先选择一个串口设备，再开始试按或测速。";
+    els.timingStatusHint.textContent = "先在上面选一个串口设备，再开始试动作或跑测试。";
   } else if (!controllerReady) {
     els.timingStatusHint.textContent =
-      `当前会先下发 ${buildSharedTimingConfigCommand()}。开始前请先到“手柄测试”页把手柄连接到“已就绪”。`;
+      "串口已经选好。下一步去“手柄测试”页把手柄连到“已就绪”，再回来调参数。";
   } else {
     els.timingStatusHint.textContent =
-      `当前会先下发 ${buildSharedTimingConfigCommand()}。快速调试、标准方圈、长程方圈和 6x128 点阵都会沿用这组 timing。建议测速时切到画笔工具和 1 号笔。`;
+      "现在发出的每个测试都会先套用当前参数。建议先试 1 格，再跑“快速检查”，最后再决定要不要跑长测。";
   }
 
   renderTimingBenchmarkResult();
@@ -3802,7 +3831,87 @@ function normalizeTimingValue(value, fallback, limits) {
 }
 
 function formatTimingSummary(timing) {
-  return `button ${timing.buttonPressDuration}ms · delay ${timing.inputDelay}ms · home ${timing.homeDuration}ms`;
+  return `按键保持 ${timing.buttonPressDuration}ms · 稳定等待 ${timing.inputDelay}ms`;
+}
+
+function describeInputDelaySetting(value) {
+  if (value <= 30) {
+    return {
+      badge: "偏快，先看稳定",
+      tip: "如果拐弯会歪、连续动作吃不稳或越跑越偏，先加 1 到 3ms 再测。",
+    };
+  }
+
+  if (value <= 55) {
+    return {
+      badge: "常用区间",
+      tip: "这段通常比较平衡，适合先跑“快速检查”，确认稳了再继续提速。",
+    };
+  }
+
+  return {
+    badge: "偏稳，会更慢",
+    tip: "如果已经很稳但觉得太慢，可以每次只减 1 到 2ms，然后重新复测。",
+  };
+}
+
+function describeButtonPressSetting(value) {
+  if (value <= 45) {
+    return {
+      badge: "偏轻，先看漏点",
+      tip: "如果 A 偶尔没画出来、少点或漏步，先加 1 到 3ms 再测。",
+    };
+  }
+
+  if (value <= 75) {
+    return {
+      badge: "常用区间",
+      tip: "这段通常比较省心，适合在方向稳定之后，再用它微调落笔手感。",
+    };
+  }
+
+  return {
+    badge: "偏稳，会更慢",
+    tip: "如果已经不漏点，只是想更快，可以慢慢往下减，避免一下子减太多。",
+  };
+}
+
+function getTimingBenchmarkActionCount(mode) {
+  if (mode.pattern === "dot-matrix") {
+    const rowCount = Math.max(0, Math.round(mode.rowCount ?? 0));
+    const columnCount = Math.max(0, Math.round(mode.columnCount ?? 0));
+
+    if (rowCount === 0 || columnCount === 0) {
+      return 0;
+    }
+
+    return 2 * rowCount * columnCount - 1;
+  }
+
+  const spiralDepth = Math.max(0, Math.round(mode.spiralDepth ?? 0));
+  return spiralDepth === 0 ? 0 : 1 + 2 * spiralDepth * (spiralDepth + 1);
+}
+
+function formatApproxDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return "约 0 秒";
+  }
+
+  if (ms < 10_000) {
+    return `约 ${(ms / 1000).toFixed(1)} 秒`;
+  }
+
+  if (ms < 60_000) {
+    return `约 ${Math.round(ms / 1000)} 秒`;
+  }
+
+  return `约 ${(ms / 60_000).toFixed(1)} 分钟`;
+}
+
+function formatTimingBenchmarkSummary(mode, timing) {
+  const actionCount = getTimingBenchmarkActionCount(mode);
+  const totalMs = actionCount * (timing.buttonPressDuration + timing.inputDelay);
+  return `${formatApproxDuration(totalMs)} · ${actionCount} 动作`;
 }
 
 function buildSharedTimingConfigCommand() {
