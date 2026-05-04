@@ -1204,8 +1204,12 @@ function formatFirmwarePortLabel(flash) {
     return flash.uploadPortPath;
   }
 
-  if (flash?.selectedPortPath) {
+  if (flash?.fallbackToAutoDetect && flash?.selectedPortPath) {
     return `自动检测（初始选择 ${flash.selectedPortPath}）`;
+  }
+
+  if (flash?.selectedPortPath) {
+    return flash.selectedPortPath;
   }
 
   return "-";
@@ -1223,7 +1227,7 @@ function updateFirmwareResultFromFlashSnapshot(flash) {
       ? "固定端口刷入失败，正在改用 PlatformIO 自动探测可用端口重试。"
       : flash.uploadPortPath
         ? "PlatformIO 正在按当前选中的串口编译并上传固件，请稍等片刻。"
-        : "PlatformIO 正在自动探测可用串口并上传固件，请稍等片刻。";
+        : "PlatformIO 正在准备按当前选中的串口上传固件，请稍等片刻。";
     setFirmwareResult({
       status: "running",
       title: "正在刷入固件",

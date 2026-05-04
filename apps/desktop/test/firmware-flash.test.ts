@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  formatMissingSelectedUploadPortMessage,
+  formatSelectedUploadPortFailureMessage,
   isUploadPortFailure,
   summarizePlatformIoFailure,
 } from "../src/web/server.js";
@@ -34,6 +36,23 @@ test("isUploadPortFailure recognizes upload-port-specific serial failures", () =
   assert.equal(
     isUploadPortFailure("Compiling .pio/build/esp32dev_wireless/src/main.cpp.o"),
     false,
+  );
+});
+
+test("firmware flash keeps the user on the selected upload port when that port disappears", () => {
+  assert.equal(
+    formatMissingSelectedUploadPortMessage("COM7"),
+    "Selected port COM7 is no longer detected. Reconnect the board or choose a different port and retry.",
+  );
+});
+
+test("firmware flash reports port-specific upload failures without switching to auto-detect", () => {
+  assert.equal(
+    formatSelectedUploadPortFailureMessage(
+      "COM7",
+      "could not open port 'COM7': Permission denied",
+    ),
+    "Upload failed on the selected port COM7. could not open port 'COM7': Permission denied Reconnect the board, make sure no other app is using the port, or choose a different port and retry.",
   );
 });
 
