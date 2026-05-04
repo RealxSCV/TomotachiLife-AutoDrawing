@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="朋友制作器（Friend Maker）是一个面向 Nintendo Switch《朋友收集：梦想生活》/ Tomodachi Life 的自动绘制工具，支持脚本生成、ESP32 固件刷写与手柄测试。"
+      content="朋友制作器（Friend Maker）是一个面向 Nintendo Switch《朋友收集：梦想生活》/ Tomodachi Life 的自动绘制工具，支持脚本生成、ESP32 固件刷写、手柄测试与调试测速。"
     />
     <meta
       name="keywords"
@@ -34,7 +34,7 @@
         <div class="hero-side">
           <div class="hero-badge">
             <span>Current Mode</span>
-            <strong>Studio + Flash + Test</strong>
+            <strong>Studio + Flash + Test + Tune</strong>
           </div>
           <section class="workflow-card" aria-label="推荐流程">
             <span class="workflow-label">推荐流程</span>
@@ -69,6 +69,10 @@
           <button class="page-tab" data-page-target="controller" type="button">
             <span class="page-tab-title">手柄测试</span>
             <small class="page-tab-meta">连接、状态、单步动作</small>
+          </button>
+          <button class="page-tab" data-page-target="timing" type="button">
+            <span class="page-tab-title">调试测速</span>
+            <small class="page-tab-meta">Timing、试按、方圈/点阵</small>
           </button>
         </nav>
       </div>
@@ -592,6 +596,7 @@
               <button id="controller-disconnect-button" class="ghost" type="button">断开串口</button>
             </div>
             <p id="controller-serial-session-status" class="hint">串口会在首次发送测试命令时自动连接。</p>
+            <p id="controller-timing-hint" class="hint">动作测试会先套用“调试测速”页里的当前 timing。</p>
 
             <div class="controller-test-layout">
               <div class="test-block">
@@ -724,6 +729,315 @@
             </div>
 
             <pre id="controller-log-output" class="log-output" data-empty-log="等待开始测试...">等待开始测试...</pre>
+          </section>
+        </main>
+      </section>
+
+      <section class="page" data-page="timing">
+        <section class="page-intro">
+          <div class="page-intro-copy">
+            <p class="page-kicker">调试测速</p>
+            <h2>按现象调参数，不用背英文名</h2>
+            <p>这页把两个 timing 翻译成更好理解的“稳定等待”和“按键保持”。先做小动作，再跑快速检查，最后用以中心为基准的 6 行 x 240 点阵做长程复现。</p>
+          </div>
+          <div class="page-step-row" aria-label="调试测速步骤">
+            <span class="page-step">1. 先试 1 格</span>
+            <span class="page-step">2. 再调两个旋钮</span>
+            <span class="page-step">3. 最后跑长测</span>
+          </div>
+        </section>
+        <main class="controller-grid timing-lab-grid">
+          <section class="panel timing-overview-panel">
+            <div class="panel-head">
+              <h2>先看这个</h2>
+              <p>如果你只是想把画画跑稳，不需要记命令，也不需要一上来就跑最长基准。按下面这套顺序最省心。</p>
+            </div>
+
+            <div class="timing-overview-grid">
+              <article class="timing-guide-card">
+                <div class="timing-guide-head">
+                  <span class="timing-guide-badge">推荐流程</span>
+                  <strong>先稳，再快，最后复现</strong>
+                </div>
+                <p id="timing-current-summary" class="timing-current-summary">当前会同时用于手柄测试、测速和正式绘制：稳定等待 45ms · 按键保持 65ms。</p>
+
+                <div class="timing-flow-grid">
+                  <article class="timing-flow-item">
+                    <span class="timing-flow-index">1</span>
+                    <div>
+                      <strong>先试 1 格和 A</strong>
+                      <p>如果 1 格都不稳，先别跑长测，先把参数调慢一点。</p>
+                    </div>
+                  </article>
+
+                  <article class="timing-flow-item">
+                    <span class="timing-flow-index">2</span>
+                    <div>
+                      <strong>先调稳定，再调力度</strong>
+                      <p>优先调“稳定等待”，只有确认方向稳了，再微调“按键保持”。</p>
+                    </div>
+                  </article>
+
+                  <article class="timing-flow-item">
+                    <span class="timing-flow-index">3</span>
+                    <div>
+                      <strong>从短测跑到长测</strong>
+                      <p>先跑快速检查，再看累计漂移，最后用以中心为基准的 6 行 x 240 点阵做真实复现。</p>
+                    </div>
+                  </article>
+                </div>
+              </article>
+
+              <article class="timing-symptom-card">
+                <div class="timing-guide-head">
+                  <span class="timing-guide-badge">按现象排查</span>
+                  <strong>看到这些情况，就这样调</strong>
+                </div>
+
+                <div class="timing-symptom-grid">
+                  <article class="timing-symptom-item">
+                    <strong>拐弯会歪、越跑越偏</strong>
+                    <p>先把“稳定等待”调大 1 到 3ms，再跑快速检查。</p>
+                  </article>
+
+                  <article class="timing-symptom-item">
+                    <strong>A 偶尔没画出来、少点</strong>
+                    <p>先把“按键保持”调大 1 到 3ms，再试单点和短测。</p>
+                  </article>
+
+                  <article class="timing-symptom-item">
+                    <strong>已经很稳，只是想更快</strong>
+                    <p>每次只减 1 到 2ms，先减“稳定等待”，每改一次都复测。</p>
+                  </article>
+
+                  <article class="timing-symptom-item">
+                    <strong>长测后才开始漂</strong>
+                    <p>直接跑以中心为基准的 6 行 x 240 点阵，看长直线末段和换行处是不是开始错位。</p>
+                  </article>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>先调这两个旋钮</h2>
+              <p>这里调好的值会同时影响手柄测试、测速和正式绘制。先调“稳定等待”，再微调“按键保持”。</p>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>当前串口</span>
+                <select id="timing-port-select">
+                  <option value="">未检测到串口</option>
+                </select>
+              </label>
+
+              <label>
+                <span>每次移动几格</span>
+                <select id="timing-step-select">
+                  <option value="1" selected>1 格</option>
+                  <option value="3">3 格</option>
+                  <option value="5">5 格</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="timing-control-grid">
+              <article class="timing-control-card timing-control-card-primary">
+                <div class="timing-control-head">
+                  <div>
+                    <p class="timing-control-kicker">第一优先</p>
+                    <h3>稳定等待</h3>
+                    <p class="timing-control-subtitle">技术名：inputDelay</p>
+                  </div>
+                  <span id="timing-input-delay-badge" class="timing-control-badge">推荐起点</span>
+                </div>
+
+                <p class="timing-control-copy">决定每次动作后留多少缓冲时间，最像“稳定性旋钮”。转向错位、连续动作吃不稳、偶发漂移，先动它。</p>
+
+                <label class="range-row timing-control-range">
+                  <span class="timing-range-label">
+                    <strong>当前值</strong>
+                    <small>建议从 45ms 起步</small>
+                  </span>
+                  <input id="timing-input-delay-range" type="range" min="16" max="100" step="1" value="45" />
+                  <span class="range-number-group">
+                    <input
+                      id="timing-input-delay-input"
+                      class="range-number-input"
+                      type="number"
+                      min="16"
+                      max="100"
+                      step="1"
+                      value="45"
+                    />
+                    <span class="range-unit">ms</span>
+                  </span>
+                </label>
+
+                <p id="timing-input-delay-tip" class="timing-control-tip">如果拐弯会歪或越跑越偏，先加 1 到 3ms 再测。</p>
+              </article>
+
+              <article class="timing-control-card">
+                <div class="timing-control-head">
+                  <div>
+                    <p class="timing-control-kicker">第二优先</p>
+                    <h3>按键保持</h3>
+                    <p class="timing-control-subtitle">技术名：buttonPressDuration</p>
+                  </div>
+                  <span id="timing-button-press-badge" class="timing-control-badge">推荐起点</span>
+                </div>
+
+                <p class="timing-control-copy">决定按键会按住多久，最像“力度旋钮”。A 漏按、漏步、少点时优先调它；太大时可能会变慢，甚至过冲。</p>
+
+                <label class="range-row timing-control-range">
+                  <span class="timing-range-label">
+                    <strong>当前值</strong>
+                    <small>建议从 65ms 起步</small>
+                  </span>
+                  <input id="timing-button-press-range" type="range" min="16" max="100" step="1" value="65" />
+                  <span class="range-number-group">
+                    <input
+                      id="timing-button-press-input"
+                      class="range-number-input"
+                      type="number"
+                      min="16"
+                      max="100"
+                      step="1"
+                      value="65"
+                    />
+                    <span class="range-unit">ms</span>
+                  </span>
+                </label>
+
+                <p id="timing-button-press-tip" class="timing-control-tip">如果 A 有时没画出来或少点，先加 1 到 3ms 再测。</p>
+              </article>
+            </div>
+
+            <div class="action-row">
+              <button id="timing-reset-button" class="ghost" type="button">恢复推荐默认值 45 / 65</button>
+            </div>
+
+            <div class="panel-head compact">
+              <h2>先做一个小动作</h2>
+              <p>每次都会先套用当前参数，再发送方向或按钮动作。建议先用 1 格确认稳不稳，再决定要不要跑基准。</p>
+            </div>
+
+            <p id="timing-status-hint" class="hint">请先选择串口，并确保手柄已经进入“已就绪”。</p>
+
+            <div class="controller-test-layout timing-quick-layout">
+              <div class="test-block">
+                <p class="block-title">方向</p>
+                <div class="dpad-grid">
+                  <button class="ghost dpad-up" data-timing-action="move-up">上</button>
+                  <button class="ghost dpad-left" data-timing-action="move-left">左</button>
+                  <div class="dpad-center dpad-label">移动</div>
+                  <button class="ghost dpad-right" data-timing-action="move-right">右</button>
+                  <button class="ghost dpad-down" data-timing-action="move-down">下</button>
+                </div>
+              </div>
+
+              <div class="test-block">
+                <p class="block-title">按钮</p>
+                <div class="button-grid timing-button-grid">
+                  <button class="ghost" data-timing-action="button-a">A</button>
+                  <button class="ghost" data-timing-action="button-b">B</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>再选一个测试</h2>
+              <p>从左到右越来越严格。先跑快速检查，再看累计漂移，最后再用以中心为基准的 6 行 x 240 点阵复现真实长程问题。</p>
+            </div>
+
+            <div class="timing-benchmark-grid">
+              <article class="timing-benchmark-option timing-benchmark-option-primary">
+                <div class="timing-benchmark-option-head">
+                  <span class="timing-guide-badge">推荐先跑</span>
+                  <h3>快速检查</h3>
+                </div>
+                <p>标准方圈。先看拐角、转向和明显漏笔。</p>
+                <p id="timing-benchmark-standard-summary" class="timing-benchmark-summary">约 9 秒 · 85 动作</p>
+                <button id="timing-benchmark-button" class="primary" type="button">运行标准方圈</button>
+              </article>
+
+              <article class="timing-benchmark-option">
+                <div class="timing-benchmark-option-head">
+                  <span class="timing-guide-badge">第二步</span>
+                  <h3>累计漂移检查</h3>
+                </div>
+                <p>长程方圈。更适合看长一点之后会不会越跑越歪。</p>
+                <p id="timing-benchmark-long-summary" class="timing-benchmark-summary">约 34 秒 · 313 动作</p>
+                <button id="timing-long-benchmark-button" class="ghost" type="button">运行长程方圈</button>
+              </article>
+
+              <article class="timing-benchmark-option timing-benchmark-option-warm">
+                <div class="timing-benchmark-option-head">
+                  <span class="timing-guide-badge">最后复现</span>
+                  <h3>真实长程复现</h3>
+                </div>
+                <p>以中心为基准的 6 行 x 240 点阵。最适合复现长直线、换行后才出现的慢性偏移。</p>
+                <p id="timing-benchmark-repro-summary" class="timing-benchmark-summary">约 5.5 分钟 · 2998 动作</p>
+                <button id="timing-repro-benchmark-button" class="ghost" type="button">运行 6 行 x 240</button>
+              </article>
+            </div>
+
+            <div class="panel-head compact">
+              <h2>本次结果</h2>
+              <p>点任意一个测试后，这里会显示这组参数大概有多快、是否顺利跑完，以及设备最后一次返回了什么。</p>
+            </div>
+
+            <div id="timing-benchmark-card" class="firmware-status-card firmware-status-idle timing-benchmark-card">
+              <span id="timing-benchmark-pill" class="status-pill">未开始</span>
+              <strong id="timing-benchmark-title" class="status-title">等待开始测试</strong>
+              <p id="timing-benchmark-detail" class="status-detail">
+                点任意一个测试后，这里会显示这组参数大概有多快、是否顺利跑完，以及设备最后一次返回了什么。
+              </p>
+
+              <dl class="firmware-meta-list">
+                <div class="firmware-meta-row">
+                  <dt>这次参数</dt>
+                  <dd id="timing-benchmark-timing">按键保持 65ms · 稳定等待 45ms</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>实测总耗时</dt>
+                  <dd id="timing-benchmark-measured">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>理论时间</dt>
+                  <dd id="timing-benchmark-theoretical">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>平均每动作</dt>
+                  <dd id="timing-benchmark-average">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>设备反馈</dt>
+                  <dd id="timing-benchmark-device-summary">-</dd>
+                </div>
+                <div class="firmware-meta-row">
+                  <dt>更新时间</dt>
+                  <dd id="timing-benchmark-time">-</dd>
+                </div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel timing-log-panel">
+            <div class="panel-head">
+              <h2>设备返回日志</h2>
+              <p>这里只有设备原始返回内容。平时不用一直盯着看，只有测试失败或结果不对劲时，再回来对照排查就够了。</p>
+            </div>
+
+            <div class="action-row slim log-toolbar">
+              <button id="timing-clear-log-button" class="ghost" type="button">清空日志</button>
+            </div>
+
+            <pre id="timing-log-output" class="log-output" data-empty-log="等待开始调试...">等待开始调试...</pre>
           </section>
         </main>
       </section>

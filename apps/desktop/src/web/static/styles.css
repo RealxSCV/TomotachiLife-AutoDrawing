@@ -853,6 +853,238 @@ input[type="range"]:focus-visible,
   margin-top: 18px;
 }
 
+.timing-note-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(245, 191, 85, 0.34);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(245, 191, 85, 0.2), rgba(255, 255, 255, 0.84));
+}
+
+.timing-note-card strong {
+  font-size: 15px;
+}
+
+.timing-note-card p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.timing-overview-panel {
+  grid-column: 1 / -1;
+}
+
+.timing-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.timing-guide-card,
+.timing-symptom-card,
+.timing-control-card,
+.timing-benchmark-option {
+  border: 1px solid rgba(88, 110, 140, 0.16);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 18px 36px rgba(17, 31, 54, 0.06);
+}
+
+.timing-guide-card,
+.timing-symptom-card {
+  padding: 20px;
+}
+
+.timing-guide-card {
+  background: linear-gradient(135deg, rgba(255, 183, 94, 0.2), rgba(255, 255, 255, 0.92));
+}
+
+.timing-guide-head,
+.timing-control-head,
+.timing-benchmark-option-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.timing-guide-head strong,
+.timing-benchmark-option-head h3,
+.timing-control-head h3 {
+  margin: 0;
+}
+
+.timing-guide-badge,
+.timing-control-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 90, 54, 0.12);
+  color: #b14b25;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.timing-current-summary {
+  margin: 14px 0 0;
+  color: var(--ink);
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.timing-flow-grid,
+.timing-symptom-grid,
+.timing-control-grid,
+.timing-benchmark-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.timing-flow-grid,
+.timing-symptom-grid,
+.timing-control-grid {
+  margin-top: 16px;
+}
+
+.timing-flow-item,
+.timing-symptom-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid rgba(88, 110, 140, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.timing-flow-item {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 14px;
+}
+
+.timing-flow-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 90, 54, 0.12);
+  color: #b14b25;
+  font-weight: 800;
+}
+
+.timing-flow-item strong,
+.timing-symptom-item strong {
+  font-size: 15px;
+}
+
+.timing-flow-item p,
+.timing-symptom-item p,
+.timing-benchmark-option p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.timing-control-grid {
+  margin-top: 18px;
+}
+
+.timing-control-card {
+  padding: 18px;
+}
+
+.timing-control-card-primary {
+  background: linear-gradient(135deg, rgba(255, 183, 94, 0.16), rgba(255, 255, 255, 0.92));
+}
+
+.timing-control-kicker {
+  margin: 0 0 4px;
+  color: #b14b25;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.timing-control-subtitle {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.timing-control-copy {
+  margin: 12px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+.timing-control-range {
+  margin-top: 16px;
+}
+
+.timing-range-label {
+  display: grid;
+  gap: 4px;
+}
+
+.timing-range-label strong {
+  font-size: 14px;
+}
+
+.timing-range-label small {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.timing-control-tip {
+  margin: 14px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.timing-benchmark-grid {
+  margin-top: 18px;
+}
+
+.timing-benchmark-option {
+  padding: 18px;
+}
+
+.timing-benchmark-option-primary {
+  background: linear-gradient(135deg, rgba(255, 183, 94, 0.16), rgba(255, 255, 255, 0.92));
+}
+
+.timing-benchmark-option-warm {
+  background: linear-gradient(135deg, rgba(255, 120, 80, 0.12), rgba(255, 255, 255, 0.94));
+}
+
+.timing-benchmark-option-head h3 {
+  font-size: 18px;
+}
+
+.timing-benchmark-summary {
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.timing-benchmark-option button {
+  width: 100%;
+  margin-top: 16px;
+}
+
 .test-block {
   padding: 16px;
   border: 1px solid var(--line);
@@ -913,6 +1145,10 @@ input[type="range"]:focus-visible,
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.timing-button-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .firmware-log-panel {
   grid-column: 1 / -1;
 }
@@ -938,6 +1174,10 @@ input[type="range"]:focus-visible,
 
 .controller-log-panel {
   grid-column: 2;
+}
+
+.timing-log-panel {
+  grid-column: 1 / -1;
 }
 
 .firmware-status-card {
@@ -1441,6 +1681,10 @@ input[type="range"]:focus-visible,
     grid-template-columns: 1fr;
   }
 
+  .timing-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
   .page-nav-wrap {
     top: 10px;
   }
@@ -1490,7 +1734,8 @@ input[type="range"]:focus-visible,
   .field-grid,
   .preview-meta-strip,
   .stat-strip,
-  .button-grid {
+  .button-grid,
+  .timing-benchmark-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1511,6 +1756,19 @@ input[type="range"]:focus-visible,
   .range-row {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .timing-guide-head,
+  .timing-control-head,
+  .timing-benchmark-option-head,
+  .timing-flow-item {
+    grid-template-columns: 1fr;
+  }
+
+  .timing-guide-head,
+  .timing-control-head,
+  .timing-benchmark-option-head {
+    display: grid;
   }
 
   .page-nav {
