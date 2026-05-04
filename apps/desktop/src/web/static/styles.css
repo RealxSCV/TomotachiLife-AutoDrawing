@@ -721,6 +721,15 @@ button.ghost {
   color: var(--ink);
 }
 
+button.ghost.danger {
+  background: rgba(213, 69, 36, 0.12);
+  color: var(--accent-deep);
+}
+
+button.ghost.danger:hover:not(:disabled) {
+  background: rgba(213, 69, 36, 0.18);
+}
+
 button:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
@@ -1546,6 +1555,18 @@ input[type="range"]:focus-visible,
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px solid rgba(88, 110, 140, 0.18);
+}
+
+.execution-emergency {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(213, 69, 36, 0.18);
+  background: rgba(213, 69, 36, 0.05);
+}
+
+.execution-emergency .hint {
+  margin-top: 0;
 }
 
 .recovery-session-list {

@@ -93,6 +93,7 @@ const state = {
     execution: {
       id: null,
       status: "idle",
+      statusSince: null,
       totalCommands: 0,
       completedCommands: 0,
       currentCommand: null,
@@ -198,6 +199,7 @@ const els = {
   resumeExecutionButton: document.getElementById("resume-execution-button"),
   stopExecutionButton: document.getElementById("stop-execution-button"),
   resetExecutionButton: document.getElementById("reset-execution-button"),
+  executionEmergencyPanel: document.getElementById("execution-emergency-panel"),
   studioExecutionStatus: document.getElementById("studio-execution-status"),
   recoverySessionList: document.getElementById("recovery-session-list"),
   recoveryEmptyState: document.getElementById("recovery-empty-state"),
@@ -279,6 +281,7 @@ const els = {
 let studioExecutionPollTimer = null;
 let firmwareToolingPollTimer = null;
 let windowsSerialDriverPollTimer = null;
+const STUDIO_RESET_REVEAL_DELAY_MS = 4_000;
 let firmwareFlashPollTimer = null;
 let controllerStatusPollTimer = null;
 let controllerStatusPollDeadlineMs = 0;
@@ -529,7 +532,15 @@ els.stopExecutionButton.addEventListener("click", async () => {
 });
 
 els.resetExecutionButton.addEventListener("click", async () => {
-  await sendStudioExecutionControl("reset", "强制恢复绘制状态");
+  const shouldReset = window.confirm(
+    "这会强制清除当前卡住的绘制状态，不会继续等待当前命令自然结束。只有在“正在中断绘制”长时间不消失时才建议使用。确定继续吗？",
+  );
+
+  if (!shouldReset) {
+    return;
+  }
+
+  await sendStudioExecutionControl("reset", "强制清除卡住状态");
 });
 
 els.recoverySessionList.addEventListener("click", async (event) => {
@@ -1770,15 +1781,20 @@ function applyStudioExecutionSnapshot(snapshot) {
   const previousId = state.studio.execution.id;
   const nextId = snapshot.id ?? null;
   const isNewExecution = previousId !== nextId;
+  const nextStatus =
+    typeof snapshot.status === "string" ? snapshot.status : state.studio.execution.status;
   const existingLineCount = isNewExecution ? 0 : state.studio.execution.lineCount;
   const lines = Array.isArray(snapshot.lines) ? snapshot.lines : [];
   const nextLineCount = lines.length;
   const newLines = lines.slice(existingLineCount);
+  const nextStatusSince =
+    isNewExecution || previousStatus !== nextStatus ? Date.now() : state.studio.execution.statusSince;
 
   state.studio.execution = {
     ...state.studio.execution,
     id: nextId,
-    status: typeof snapshot.status === "string" ? snapshot.status : state.studio.execution.status,
+    status: nextStatus,
+    statusSince: nextStatusSince,
     totalCommands:
       typeof snapshot.totalCommands === "number" ? snapshot.totalCommands : state.studio.execution.totalCommands,
     completedCommands:
@@ -1882,12 +1898,36 @@ async function sendStudioExecutionControl(action, label) {
     }
 
     appendLog(els.studioLogOutput, `${label}请求已发送。`);
+    if (action === "pause") {
+      appendLog(
+        els.studioLogOutput,
+        "暂停会在当前命令完成后生效；如果此时 Switch 还会继续动一下，这是正常现象。",
+      );
+    }
+    if (action === "stop") {
+      appendLog(
+        els.studioLogOutput,
+        "中断会在当前命令完成后生效；随后会保存恢复点，供你重新进入绘画页后继续。",
+      );
+    }
     applyStudioExecutionSnapshot(payload.execution);
     applySerialSessionSnapshot(payload.session);
     await refreshRecoverySessions();
   } catch (error) {
     appendLog(els.studioLogOutput, `${label}失败：${getErrorMessage(error)}`);
   }
+}
+
+function shouldShowExecutionEmergencyReset() {
+  if (state.studio.execution.status !== "stopping") {
+    return false;
+  }
+
+  if (typeof state.studio.execution.statusSince !== "number") {
+    return false;
+  }
+
+  return Date.now() - state.studio.execution.statusSince >= STUDIO_RESET_REVEAL_DELAY_MS;
 }
 
 function formatRecoverySessionStatus(status) {
@@ -2337,10 +2377,10 @@ function renderStudioExecutionStatus() {
       }`;
       break;
     case "paused":
-      els.studioExecutionStatus.textContent = `绘制已暂停：${execution.completedCommands} / ${execution.totalCommands}`;
+      els.studioExecutionStatus.textContent = `绘制已暂停：${execution.completedCommands} / ${execution.totalCommands}。如果你刚点了暂停，看到 Switch 还会把最后一条已发出的命令跑完，这是正常现象。`;
       break;
     case "stopping":
-      els.studioExecutionStatus.textContent = `正在中断绘制：${execution.completedCommands} / ${execution.totalCommands}`;
+      els.studioExecutionStatus.textContent = `正在中断绘制：${execution.completedCommands} / ${execution.totalCommands}。Switch 还会先跑完当前命令，然后保存恢复点；如果长时间卡在这里，下面会出现应急按钮。`;
       break;
     case "completed":
       els.studioExecutionStatus.textContent = `绘制已完成：${execution.completedCommands} / ${execution.totalCommands}`;
@@ -2473,6 +2513,7 @@ function syncStudioUi() {
   const executionPaused = state.studio.execution.status === "paused";
   const executionRunning = state.studio.execution.status === "running";
   const executionStopping = state.studio.execution.status === "stopping";
+  const showExecutionEmergencyReset = shouldShowExecutionEmergencyReset();
 
   els.sizeSelect.value = String(state.studio.canvasSize);
   els.brushSizeSelect.value = String(state.studio.brushSize);
@@ -2553,7 +2594,8 @@ function syncStudioUi() {
   els.pauseExecutionButton.disabled = !executionRunning;
   els.resumeExecutionButton.disabled = !executionPaused;
   els.stopExecutionButton.disabled = !(executionRunning || executionPaused);
-  els.resetExecutionButton.disabled = !executionStopping;
+  els.executionEmergencyPanel.classList.toggle("hidden", !showExecutionEmergencyReset);
+  els.resetExecutionButton.disabled = !showExecutionEmergencyReset;
   renderStudioExecutionStatus();
   renderOfficialPalettePreview();
   renderRecoverySessions();

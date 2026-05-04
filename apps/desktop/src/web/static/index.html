@@ -303,10 +303,16 @@
               <button id="pause-execution-button" class="ghost" type="button" disabled>暂停绘制</button>
               <button id="resume-execution-button" class="ghost" type="button" disabled>继续绘制</button>
               <button id="stop-execution-button" class="ghost" type="button" disabled>中断并保存恢复点</button>
-              <button id="reset-execution-button" class="ghost" type="button" disabled>强制恢复状态</button>
             </div>
 
+            <p class="hint">暂停绘制和中断并保存恢复点都会在当前命令完成后生效。如果你点了暂停后看到 Switch 还会继续动一下，这是正常现象；它会先把当前命令跑完。</p>
             <p class="hint" id="studio-execution-status">当前未开始绘制。</p>
+            <section id="execution-emergency-panel" class="execution-emergency hidden" aria-label="应急操作">
+              <p class="hint">
+                如果“正在中断绘制”持续很久没有结束，说明当前会话可能卡住了。只有这种情况下，才使用下面的应急按钮强制清除卡住状态。
+              </p>
+              <button id="reset-execution-button" class="ghost danger" type="button" disabled>强制清除卡住状态</button>
+            </section>
 
             <section class="recovery-panel" aria-label="恢复任务">
               <div class="panel-head compact">
