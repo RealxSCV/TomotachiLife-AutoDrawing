@@ -333,9 +333,48 @@ export function getAckTimeoutForCommand(
   timing: InputTiming = DEFAULT_SAFE_INPUT_TIMING,
 ): number {
   const trimmed = command.trim();
+  const simplePressTimeoutMs = 1_000 + timing.buttonPressMs + timing.inputDelayMs;
+  const boundedTimeout = (computedTimeoutMs: number) => Math.max(baseTimeoutMs, computedTimeoutMs);
 
   if (trimmed.startsWith("CFG INPUT ")) {
     return baseTimeoutMs;
+  }
+
+  if (trimmed === "P" || trimmed.startsWith("BTN ")) {
+    return boundedTimeout(simplePressTimeoutMs);
+  }
+
+  if (trimmed.startsWith("HOLD ")) {
+    const match = /^HOLD\s+\S+\s+(\d+)$/u.exec(trimmed);
+
+    if (!match?.[1]) {
+      return boundedTimeout(simplePressTimeoutMs);
+    }
+
+    const holdMs = Number.parseInt(match[1], 10);
+    return boundedTimeout(1_000 + holdMs + timing.inputDelayMs);
+  }
+
+  if (trimmed.startsWith("TAP ")) {
+    const match = /^TAP\s+\S+\s+(\d+)$/u.exec(trimmed);
+
+    if (!match?.[1]) {
+      return boundedTimeout(simplePressTimeoutMs);
+    }
+
+    const count = Number.parseInt(match[1], 10);
+    return boundedTimeout(1_000 + count * (timing.buttonPressMs + timing.inputDelayMs));
+  }
+
+  if (trimmed.startsWith("STICK ")) {
+    const match = /^STICK\s+(-?\d+)\s+(-?\d+)\s+(\d+)$/u.exec(trimmed);
+
+    if (!match?.[3]) {
+      return boundedTimeout(simplePressTimeoutMs);
+    }
+
+    const holdMs = Number.parseInt(match[3], 10);
+    return boundedTimeout(1_000 + holdMs + timing.inputDelayMs);
   }
 
   if (trimmed === "H") {

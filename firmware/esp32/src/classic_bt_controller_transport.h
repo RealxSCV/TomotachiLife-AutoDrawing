@@ -1,6 +1,7 @@
 #pragma once
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "controller_transport.h"
@@ -27,9 +28,15 @@ class ClassicBtControllerTransport : public ControllerTransport {
   uint16_t idleSendIntervalMs() const;
   bool isHidReportChannelOpen() const;
   bool isControllerInputReady() const;
-  bool sendCurrentInputReport(bool logFailure);
+  bool sendCurrentInputReport(bool logFailure, bool waitForSendEvent = false);
   bool repeatCurrentInputReport(uint16_t durationMs, bool logFailure);
   bool shouldRetryAfterTransientSendFailure() const;
+  bool waitForInputReportAccepted(uint32_t expectedEventCount, bool logFailure);
+  bool waitForInputReportDrain(uint32_t timeoutMs, bool logFailure);
+  bool beginExplicitInput();
+  void endExplicitInput();
+  void resetInputReportTracking();
+  void markControllerPaired();
   bool sendSubcommandReply(uint8_t reportId, const uint8_t *data, size_t length, const char *label);
   bool attemptVirtualCablePlug(const uint8_t peerAddress[6], const char *reason);
   void enterReconnectableState(const char *reason);
@@ -66,8 +73,13 @@ class ClassicBtControllerTransport : public ControllerTransport {
   uint8_t rightStickY_ = 128;
   uint8_t report30_[48] = {};
   uint8_t dummyReport_[11] = {};
+  SemaphoreHandle_t inputReportSendMutex_ = nullptr;
   TaskHandle_t sendTaskHandle_ = nullptr;
   volatile bool explicitInputActive_ = false;
+  volatile uint32_t inputReportSubmitCount_ = 0;
+  volatile uint32_t inputReportSendEventCount_ = 0;
+  volatile int lastInputReportStatus_ = -1;
+  volatile uint8_t lastInputReportReason_ = 0;
   uint8_t lastPeerAddress_[6] = {};
   bool hasPeerAddress_ = false;
   uint32_t ignoredReportCount_ = 0;

@@ -85,7 +85,7 @@ const state = {
     },
     profile: {
       baudRate: 115200,
-      ackTimeoutMs: 5000,
+      ackTimeoutMs: 2000,
       commandRetryCount: 1,
       templateId: "none",
       templateLabel: "无模板（正方形）",
@@ -843,7 +843,7 @@ function applyGeneratedStudioPayload(payload) {
     : [];
   state.studio.profile = {
     baudRate: payload.profile.baudRate ?? 115200,
-    ackTimeoutMs: payload.profile.ackTimeoutMs ?? 5000,
+    ackTimeoutMs: payload.profile.ackTimeoutMs ?? 2000,
     commandRetryCount: payload.profile.commandRetryCount ?? 1,
     templateId: payload.profile.templateId ?? state.studio.templateId,
     templateLabel: payload.profile.templateLabel ?? state.studio.templateLabel,
@@ -2273,13 +2273,15 @@ async function requestControllerStatus({ logErrors = false } = {}) {
       }),
     });
     const payload = await response.json();
+    applySerialSessionSnapshot(payload.session);
 
     if (!response.ok) {
-      applySerialSessionSnapshot(payload.session);
+      if (logErrors) {
+        appendExecutionLines(els.controllerLogOutput, payload.lines);
+      }
       throw new Error(payload.error ?? "读取手柄状态失败");
     }
 
-    applySerialSessionSnapshot(payload.session);
     updateControllerStatusFromLines(payload.lines ?? []);
     return true;
   } catch (error) {
@@ -2797,6 +2799,10 @@ function syncControllerUi() {
   renderSerialSessionStatus();
 }
 
+function appendExecutionLines(logTarget, lines) {
+  (lines ?? []).forEach((line) => appendLog(logTarget, `[device] ${line}`));
+}
+
 async function runExecution({
   commands,
   target,
@@ -2825,15 +2831,15 @@ async function runExecution({
       }),
     });
     const payload = await response.json();
+    applySerialSessionSnapshot(payload.session);
 
     if (!response.ok) {
-      applySerialSessionSnapshot(payload.session);
+      appendExecutionLines(logTarget, payload.lines);
       throw new Error(payload.error ?? "执行失败");
     }
 
-    applySerialSessionSnapshot(payload.session);
     appendLog(logTarget, `${successLabel}完成：${payload.totalCommands} 条命令，目标 ${payload.target}`);
-    (payload.lines ?? []).forEach((line) => appendLog(logTarget, `[device] ${line}`));
+    appendExecutionLines(logTarget, payload.lines);
     return payload;
   } catch (error) {
     appendLog(logTarget, `执行失败：${getErrorMessage(error)}`);

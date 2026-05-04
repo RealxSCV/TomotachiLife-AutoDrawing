@@ -447,6 +447,11 @@ interface LoggedError extends Error {
   logged?: boolean;
 }
 
+interface ExecutionError extends Error {
+  lines?: string[];
+  session?: SerialSessionSnapshot;
+}
+
 function createIdleFirmwareFlashState(): FirmwareFlashSnapshot {
   return {
     status: "idle",
@@ -470,6 +475,14 @@ function markLogged(error: Error): LoggedError {
   const loggedError = error as LoggedError;
   loggedError.logged = true;
   return loggedError;
+}
+
+function withExecutionContext(error: unknown, lines: string[]): ExecutionError {
+  const executionError =
+    error instanceof Error ? (error as ExecutionError) : (new Error(String(error)) as ExecutionError);
+  executionError.lines = [...lines];
+  executionError.session = serialSessionManager.snapshot();
+  return executionError;
 }
 
 export function isUploadPortFailure(message: string): boolean {
@@ -1132,38 +1145,44 @@ async function executeCommands(body: {
   const retries = body.retries ?? 1;
   const lines: string[] = [`INFO target=${target} commands=${body.commands.length}`];
 
-  if (target === "serial") {
-    if (!body.portPath) {
-      throw new Error("Missing portPath.");
+  try {
+    if (target === "serial") {
+      if (!body.portPath) {
+        throw new Error("Missing portPath.");
+      }
+
+      if (isManagedExecutionActive(managedExecution.status)) {
+        throw new Error("Drawing execution is already running.");
+      }
+
+      lines.push(`INFO port=${body.portPath} baud=${body.baudRate ?? 115200}`);
+
+      await serialSessionManager.send(body.commands, {
+        path: body.portPath,
+        baudRate: body.baudRate ?? 115200,
+        ackTimeoutMs,
+        retries,
+        onDeviceLine: (line) => {
+          lines.push(line);
+        },
+      });
+    } else {
+      const sender = new SimulatedAckSender();
+
+      await sender.send(body.commands, {
+        ackTimeoutMs,
+        retries,
+        ackDelayMs: body.ackDelayMs ?? 0,
+        ...(body.errorAtCommand !== undefined ? { errorAtCommand: body.errorAtCommand } : {}),
+        onDeviceLine: (line) => {
+          lines.push(line);
+        },
+      });
     }
-
-    if (isManagedExecutionActive(managedExecution.status)) {
-      throw new Error("Drawing execution is already running.");
-    }
-
-    lines.push(`INFO port=${body.portPath} baud=${body.baudRate ?? 115200}`);
-
-    await serialSessionManager.send(body.commands, {
-      path: body.portPath,
-      baudRate: body.baudRate ?? 115200,
-      ackTimeoutMs,
-      retries,
-      onDeviceLine: (line) => {
-        lines.push(line);
-      },
-    });
-  } else {
-    const sender = new SimulatedAckSender();
-
-    await sender.send(body.commands, {
-      ackTimeoutMs,
-      retries,
-      ackDelayMs: body.ackDelayMs ?? 0,
-      ...(body.errorAtCommand !== undefined ? { errorAtCommand: body.errorAtCommand } : {}),
-      onDeviceLine: (line) => {
-        lines.push(line);
-      },
-    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lines.push(`WARN execute failed message=${message}`);
+    throw withExecutionContext(error, lines);
   }
 
   lines.push("INFO completed");
@@ -1541,7 +1560,12 @@ async function handleExecute(request: IncomingMessage, response: ServerResponse)
     json(response, 200, await executeCommands(body));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    json(response, 400, { error: message, session: serialSessionManager.snapshot() });
+    const executionError = error as ExecutionError;
+    json(response, 400, {
+      error: message,
+      lines: executionError.lines ?? [],
+      session: executionError.session ?? serialSessionManager.snapshot(),
+    });
   }
 }
 
@@ -1881,7 +1905,12 @@ async function handleSimulate(request: IncomingMessage, response: ServerResponse
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    json(response, 400, { error: message, session: serialSessionManager.snapshot() });
+    const executionError = error as ExecutionError;
+    json(response, 400, {
+      error: message,
+      lines: executionError.lines ?? [],
+      session: executionError.session ?? serialSessionManager.snapshot(),
+    });
   }
 }
 
