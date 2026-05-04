@@ -199,6 +199,12 @@ ClassicBtControllerTransport *ClassicBtControllerTransport::instance_ = nullptr;
 
 void ClassicBtControllerTransport::begin() {
   instance_ = this;
+  if (inputReportSendMutex_ == nullptr) {
+    inputReportSendMutex_ = xSemaphoreCreateRecursiveMutex();
+    if (inputReportSendMutex_ == nullptr) {
+      Serial.println("WARN bt input-report mutex create failed");
+    }
+  }
   clearInputs();
   if (!initializeClassicBluetooth()) {
     Serial.println("WARN bt begin failed");
@@ -375,6 +381,7 @@ void ClassicBtControllerTransport::clearConnectionState() {
   stackStarted_ = false;
   timer_ = 0;
   explicitInputActive_ = false;
+  resetInputReportTracking();
   initStep_ = "idle";
   initError_ = "none";
   ignoredReportCount_ = 0;
@@ -386,7 +393,6 @@ void ClassicBtControllerTransport::clearConnectionState() {
   lastSendReportStatus_ = -1;
   lastSendReportReason_ = 0;
   lastSendReportId_ = 0;
-  reportCongested_ = false;
   sendReportFailureCount_ = 0;
   lastDropReason_ = "none";
 }
@@ -575,7 +581,9 @@ void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
 
 bool ClassicBtControllerTransport::pressButtons(
     uint32_t buttonsMask, uint16_t holdMs, uint16_t settleMs) {
-  explicitInputActive_ = true;
+  if (!beginExplicitInput()) {
+    return false;
+  }
   setButtonBits(buttonsMask);
   updateInputReport();
   bool ok = repeatCurrentInputReport(holdMs, true);
@@ -583,13 +591,15 @@ bool ClassicBtControllerTransport::pressButtons(
   if (!repeatCurrentInputReport(settleMs, true)) {
     ok = false;
   }
-  explicitInputActive_ = false;
+  endExplicitInput();
   return ok;
 }
 
 bool ClassicBtControllerTransport::moveDirection(
     int x, int y, uint16_t holdMs, uint16_t settleMs) {
-  explicitInputActive_ = true;
+  if (!beginExplicitInput()) {
+    return false;
+  }
   buttonsRight_ = 0;
   buttonsShared_ = 0;
   buttonsLeft_ = 0;
@@ -600,7 +610,7 @@ bool ClassicBtControllerTransport::moveDirection(
   if (!repeatCurrentInputReport(settleMs, true)) {
     ok = false;
   }
-  explicitInputActive_ = false;
+  endExplicitInput();
   return ok;
 }
 
@@ -711,29 +721,48 @@ bool ClassicBtControllerTransport::isControllerInputReady() const {
   return isHidReportChannelOpen() && paired_;
 }
 
-bool ClassicBtControllerTransport::sendCurrentInputReport(bool logFailure) {
+bool ClassicBtControllerTransport::sendCurrentInputReport(bool logFailure, bool waitForSendEvent) {
   readyForReports_ = isHidReportChannelOpen();
 
   if (!readyForReports_) {
     if (logFailure) {
-      Serial.printf("WARN bt report skipped reason=not-ready connected=%s paired=%s\n",
-                    boolName(connected_),
-                    boolName(paired_));
+      Serial.printf(
+          "WARN bt report skipped reason=not-ready connected=%s paired=%s\n",
+          boolName(connected_),
+          boolName(paired_));
     }
     return false;
   }
 
   updateInputReport();
 
+  const bool shouldWaitForSendEvent = waitForSendEvent && paired_;
+  uint32_t expectedEventCount = 0;
   const bool shouldSendFullReport = connected_ || paired_;
   const uint8_t *payload = shouldSendFullReport ? report30_ : dummyReport_;
   const size_t payloadLength = shouldSendFullReport ? sizeof(report30_) : sizeof(dummyReport_);
 
+  if (inputReportSendMutex_ != nullptr) {
+    xSemaphoreTakeRecursive(inputReportSendMutex_, portMAX_DELAY);
+  }
+
+  reportCongested_ = false;
   const esp_err_t err = esp_bt_hid_device_send_report(
       ESP_HIDD_REPORT_TYPE_INTRDATA,
       0x30,
       payloadLength,
       const_cast<uint8_t *>(payload));
+  if (err == ESP_OK) {
+    inputReportSubmitCount_ += 1;
+    if (shouldWaitForSendEvent) {
+      expectedEventCount = inputReportSubmitCount_;
+    }
+  }
+
+  if (inputReportSendMutex_ != nullptr) {
+    xSemaphoreGiveRecursive(inputReportSendMutex_);
+  }
+
   if (err != ESP_OK) {
     sendReportFailureCount_ += 1;
     lastSendReportStatus_ = static_cast<int>(err);
@@ -751,11 +780,91 @@ bool ClassicBtControllerTransport::sendCurrentInputReport(bool logFailure) {
   }
 
   timer_ = static_cast<uint8_t>(timer_ + 1);
-  return true;
+  return shouldWaitForSendEvent ? waitForInputReportAccepted(expectedEventCount, logFailure) : true;
 }
 
 bool ClassicBtControllerTransport::shouldRetryAfterTransientSendFailure() const {
-  return reportCongested_ && isHidReportChannelOpen() && paired_;
+  return reportCongested_ && isHidReportChannelOpen();
+}
+
+bool ClassicBtControllerTransport::waitForInputReportAccepted(
+    uint32_t expectedEventCount, bool logFailure) {
+  const uint32_t startedAt = millis();
+
+  while (inputReportSendEventCount_ < expectedEventCount) {
+    if (millis() - startedAt >= HID_SEND_REPORT_TIMEOUT_MS) {
+      if (logFailure) {
+        Serial.printf(
+            "WARN bt send_report timeout report=48 waited_ms=%u submitted=%lu completed=%lu\n",
+            HID_SEND_REPORT_TIMEOUT_MS,
+            static_cast<unsigned long>(inputReportSubmitCount_),
+            static_cast<unsigned long>(inputReportSendEventCount_));
+      }
+      return false;
+    }
+    delay(1);
+  }
+
+  if (lastInputReportStatus_ != ESP_HIDD_SUCCESS) {
+    if (logFailure) {
+      Serial.printf(
+          "WARN bt send_report rejected status=%d reason=%u report=%u\n",
+          lastInputReportStatus_,
+          lastInputReportReason_,
+          0x30);
+    }
+    return false;
+  }
+
+  return true;
+}
+
+bool ClassicBtControllerTransport::waitForInputReportDrain(uint32_t timeoutMs, bool logFailure) {
+  if (!paired_) {
+    return true;
+  }
+
+  const uint32_t startedAt = millis();
+  while (inputReportSendEventCount_ < inputReportSubmitCount_) {
+    if (millis() - startedAt >= timeoutMs) {
+      if (logFailure) {
+        Serial.printf(
+            "WARN bt send_report drain timeout waited_ms=%lu submitted=%lu completed=%lu\n",
+            static_cast<unsigned long>(timeoutMs),
+            static_cast<unsigned long>(inputReportSubmitCount_),
+            static_cast<unsigned long>(inputReportSendEventCount_));
+      }
+      return false;
+    }
+    delay(1);
+  }
+
+  return true;
+}
+
+bool ClassicBtControllerTransport::beginExplicitInput() {
+  explicitInputActive_ = true;
+
+  if (inputReportSendMutex_ == nullptr) {
+    return true;
+  }
+
+  xSemaphoreTakeRecursive(inputReportSendMutex_, portMAX_DELAY);
+  if (paired_ && inputReportSendEventCount_ < inputReportSubmitCount_) {
+    Serial.printf(
+        "INFO bt send_report drain skipped submitted=%lu completed=%lu\n",
+        static_cast<unsigned long>(inputReportSubmitCount_),
+        static_cast<unsigned long>(inputReportSendEventCount_));
+    inputReportSubmitCount_ = inputReportSendEventCount_;
+  }
+  return true;
+}
+
+void ClassicBtControllerTransport::endExplicitInput() {
+  if (inputReportSendMutex_ != nullptr) {
+    xSemaphoreGiveRecursive(inputReportSendMutex_);
+  }
+  explicitInputActive_ = false;
 }
 
 bool ClassicBtControllerTransport::repeatCurrentInputReport(
@@ -765,9 +874,7 @@ bool ClassicBtControllerTransport::repeatCurrentInputReport(
   bool loggedCongestionRetry = false;
 
   while (true) {
-    // Prefer the synchronous send result, but tolerate a brief burst of HID
-    // congestion before declaring the controller link unusable.
-    if (!sendCurrentInputReport(logFailure)) {
+    if (!sendCurrentInputReport(logFailure, false)) {
       if (shouldRetryAfterTransientSendFailure()) {
         if (congestionStartedAt == 0) {
           congestionStartedAt = millis();
@@ -802,6 +909,22 @@ bool ClassicBtControllerTransport::repeatCurrentInputReport(
   }
 
   return true;
+}
+
+void ClassicBtControllerTransport::resetInputReportTracking() {
+  inputReportSubmitCount_ = 0;
+  inputReportSendEventCount_ = 0;
+  lastInputReportStatus_ = -1;
+  lastInputReportReason_ = 0;
+  reportCongested_ = false;
+}
+
+void ClassicBtControllerTransport::markControllerPaired() {
+  if (!paired_) {
+    resetInputReportTracking();
+  }
+  paired_ = true;
+  pairingComplete_ = true;
 }
 
 bool ClassicBtControllerTransport::sendSubcommandReply(
@@ -941,14 +1064,12 @@ void ClassicBtControllerTransport::processIncomingReport(uint8_t reportId, uint1
     return;
   }
   if (data[9] == 48) {
-    paired_ = true;
-    pairingComplete_ = true;
+    markControllerPaired();
     sendSubcommandReply(0x21, kReply3001, sizeof(kReply3001), "reply3001");
     return;
   }
   if (data[9] == 33 && data[10] == 33) {
-    paired_ = true;
-    pairingComplete_ = true;
+    markControllerPaired();
     sendSubcommandReply(0x21, kReply3333, sizeof(kReply3333), "reply3333");
     return;
   }
@@ -1066,6 +1187,11 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
       lastSendReportStatus_ = param->send_report.status;
       lastSendReportReason_ = param->send_report.reason;
       lastSendReportId_ = param->send_report.report_id;
+      if (param->send_report.report_id == 0x30) {
+        lastInputReportStatus_ = param->send_report.status;
+        lastInputReportReason_ = param->send_report.reason;
+        inputReportSendEventCount_ += 1;
+      }
       reportCongested_ = param->send_report.status != ESP_HIDD_SUCCESS &&
                          param->send_report.reason == kHidErrCongested;
       readyForReports_ = isHidReportChannelOpen();
@@ -1195,15 +1321,32 @@ void ClassicBtControllerTransport::updateInputReport() {}
 void ClassicBtControllerTransport::ensureSendTask() {}
 bool ClassicBtControllerTransport::isHidReportChannelOpen() const { return false; }
 bool ClassicBtControllerTransport::isControllerInputReady() const { return false; }
-bool ClassicBtControllerTransport::sendCurrentInputReport(bool logFailure) {
+bool ClassicBtControllerTransport::sendCurrentInputReport(bool logFailure, bool waitForSendEvent) {
+  (void)logFailure;
+  (void)waitForSendEvent;
+  return false;
+}
+bool ClassicBtControllerTransport::shouldRetryAfterTransientSendFailure() const { return false; }
+bool ClassicBtControllerTransport::waitForInputReportAccepted(
+    uint32_t expectedEventCount, bool logFailure) {
+  (void)expectedEventCount;
   (void)logFailure;
   return false;
 }
+bool ClassicBtControllerTransport::waitForInputReportDrain(uint32_t timeoutMs, bool logFailure) {
+  (void)timeoutMs;
+  (void)logFailure;
+  return false;
+}
+bool ClassicBtControllerTransport::beginExplicitInput() { return false; }
+void ClassicBtControllerTransport::endExplicitInput() {}
 bool ClassicBtControllerTransport::repeatCurrentInputReport(uint16_t durationMs, bool logFailure) {
   (void)durationMs;
   (void)logFailure;
   return false;
 }
+void ClassicBtControllerTransport::resetInputReportTracking() {}
+void ClassicBtControllerTransport::markControllerPaired() {}
 bool ClassicBtControllerTransport::sendSubcommandReply(
     uint8_t reportId, const uint8_t *data, size_t length, const char *label) {
   (void)reportId;
