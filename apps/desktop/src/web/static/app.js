@@ -2717,20 +2717,38 @@ function renderStudioConnectionStatus() {
 function renderStudioExecutionStatus() {
   const execution = state.studio.execution;
 
+  // 1. 新增：计算当前进度的百分比
+  let percent = 0;
+  if (execution.totalCommands > 0) {
+    percent = Math.floor((execution.completedCommands / execution.totalCommands) * 100);
+  }
+
+  // 2. 新增：控制我们刚才在 HTML 加的进度条的显示和数值
+  const progressBar = document.getElementById("studio-execution-progress");
+  if (progressBar) {
+    if (execution.status === "running" || execution.status === "paused" || execution.status === "stopping") {
+      progressBar.style.display = "block"; // 任务开始时显示进度条
+      progressBar.value = percent;         // 赋予进度值
+    } else {
+      progressBar.style.display = "none";  // 闲置或结束时隐藏进度条
+    }
+  }
+
+  // 3. 修改：在文字提示里也加上 (XX%) 的显示
   switch (execution.status) {
     case "running":
-      els.studioExecutionStatus.textContent = `绘制进行中：${execution.completedCommands} / ${execution.totalCommands}${
+      els.studioExecutionStatus.textContent = `绘制进行中 (${percent}%)：${execution.completedCommands} / ${execution.totalCommands}${
         execution.currentCommand ? ` · 当前命令 ${execution.currentCommand}` : ""
       }`;
       break;
     case "paused":
-      els.studioExecutionStatus.textContent = `绘制已暂停：${execution.completedCommands} / ${execution.totalCommands}。如果你刚点了暂停，看到 Switch 还会把最后一条已发出的命令跑完，这是正常现象。`;
+      els.studioExecutionStatus.textContent = `绘制已暂停 (${percent}%)：${execution.completedCommands} / ${execution.totalCommands}。如果你刚点了暂停，看到 Switch 还会把最后一条已发出的命令跑完，这是正常现象。`;
       break;
     case "stopping":
-      els.studioExecutionStatus.textContent = `正在中断绘制：${execution.completedCommands} / ${execution.totalCommands}。Switch 还会先跑完当前命令，然后保存恢复点；如果长时间卡在这里，下面会出现应急按钮。`;
+      els.studioExecutionStatus.textContent = `正在中断绘制 (${percent}%)：${execution.completedCommands} / ${execution.totalCommands}。Switch 还会先跑完当前命令，然后保存恢复点；如果长时间卡在这里，下面会出现应急按钮。`;
       break;
     case "completed":
-      els.studioExecutionStatus.textContent = `绘制已完成：${execution.completedCommands} / ${execution.totalCommands}`;
+      els.studioExecutionStatus.textContent = `绘制已完成 (100%)：${execution.completedCommands} / ${execution.totalCommands}`;
       break;
     case "stopped":
       els.studioExecutionStatus.textContent = `绘制已中断并保存恢复点：${execution.completedCommands} / ${execution.totalCommands}。请先在 Switch 里保存，再手动重新进入绘画页后继续。`;
