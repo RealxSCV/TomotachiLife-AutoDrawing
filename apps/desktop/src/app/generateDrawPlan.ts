@@ -23,6 +23,8 @@ export interface DrawPlan {
   paletteHexes: string[];
   totalPixels: number;
   estimatedRuntimeMs: number;
+  essentialRuntimeMs: number;
+  essentialRuntimeLabel: string;
   previewPng: Buffer;
   imageBounds: CanvasBounds | null;
   pathStats: DrawPlanPathStats;
@@ -60,6 +62,27 @@ export async function generateDrawPlan(
     .sort((a, b) => a[0] - b[0])
     .map(([, colorHex]) => colorHex);
 
+
+    // --- 修复版的计算逻辑 ---
+    let lastColorCmdIndex = -1;
+    // 倒着找最后一次切换颜色的指令
+    for (let i = drawCommands.length - 1; i >= 0; i--) {
+      if (drawCommands[i]?.type === 'color') {
+        lastColorCmdIndex = i;
+        break;
+      }
+    }
+
+    // 如果找到了（说明是多色模式），就截取到那个指令之前的所有指令
+    const essentialCommands = lastColorCmdIndex > 0 
+      ? drawCommands.slice(0, lastColorCmdIndex) 
+      : drawCommands;
+
+    const essentialRuntimeMs = estimateRuntimeMs(essentialCommands, profile);
+    const essentialRuntimeLabel = formatDuration(essentialRuntimeMs);
+    // ----------------------
+
+
   return {
     commands: serializeCommands(drawCommands),
     resumePlan: scanlinePlan.resumePlan,
@@ -68,6 +91,8 @@ export async function generateDrawPlan(
     paletteHexes,
     totalPixels: countDrawablePixels(pixelMap),
     estimatedRuntimeMs: estimateRuntimeMs(drawCommands, profile),
+    essentialRuntimeMs,
+    essentialRuntimeLabel,
     previewPng,
     imageBounds,
     pathStats,
@@ -161,4 +186,11 @@ export function calculatePathStats(commands: DrawCommand[]): DrawPlanPathStats {
     longMoveOver100,
     longMoveOver200,
   };
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.ceil(ms / 1_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
 }

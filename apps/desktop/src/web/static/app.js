@@ -1038,7 +1038,18 @@ function applyGeneratedStudioPayload(payload) {
   els.statCommands.textContent = payload.stats.pathStats
     ? `${payload.stats.commandCount} · L ${payload.stats.pathStats.lineRunCount}`
     : String(payload.stats.commandCount);
+  // 如果有“精华耗时”，就显示两个时间，方便对比
+  if (payload.stats.essentialRuntimeLabel && payload.stats.essentialRuntimeLabel !== payload.stats.estimatedRuntimeLabel) {
+    els.statRuntime.innerHTML = `
+      <span title="全自动完成总时长">${payload.stats.estimatedRuntimeLabel}</span>
+      <br/>
+      <small title="除去最后一种背景色后的时长" style="color: #c44;">
+        (手动填色前: ${payload.stats.essentialRuntimeLabel})
+      </small>
+    `;
+  } else {
   els.statRuntime.textContent = payload.stats.estimatedRuntimeLabel;
+  }
   void updatePreviewBounds(payload);
   renderOfficialPalettePreview();
 }

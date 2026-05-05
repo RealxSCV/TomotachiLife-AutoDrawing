@@ -1133,6 +1133,8 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
       commandCount: plan.commands.length,
       estimatedRuntimeMs: plan.estimatedRuntimeMs,
       estimatedRuntimeLabel: formatDuration(plan.estimatedRuntimeMs),
+      essentialRuntimeMs: plan.essentialRuntimeMs,
+      essentialRuntimeLabel: plan.essentialRuntimeLabel,
       imageBounds: plan.imageBounds,
       pathStats: plan.pathStats,
     },

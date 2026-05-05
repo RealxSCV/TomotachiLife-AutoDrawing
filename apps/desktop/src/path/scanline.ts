@@ -575,25 +575,54 @@ function shouldStartFromCanvasCenter(profile: DrawingProfile): boolean {
 }
 
 function getUsedPaletteColors(pixelMap: PixelMap): Array<{ colorIndex: number; colorHex: string }> {
-  const colorByIndex = new Map<number, string>();
+  const colorStats = new Map<number, { hex: string, count: number }>();
 
+  // --- 统计像素数量 ---
   for (const row of pixelMap) {
     for (const pixel of row) {
-      if (pixel.alpha <= 0 || pixel.colorIndex < 0) {
-        continue;
-      }
-
-      if (!colorByIndex.has(pixel.colorIndex)) {
-        colorByIndex.set(pixel.colorIndex, pixel.colorHex);
+      if (pixel.alpha <= 0 || pixel.colorIndex < 0) continue;
+      const existing = colorStats.get(pixel.colorIndex);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        colorStats.set(pixel.colorIndex, { hex: pixel.colorHex, count: 1 });
       }
     }
   }
 
-  return Array.from(colorByIndex.entries())
-    .sort((left, right) => left[0] - right[0])
-    .map(([colorIndex, colorHex]) => ({ colorIndex, colorHex }));
-}
+  // 1. 找出像素最多的那个颜色 Index
+  let maxCount = -1;
+  let maxColorIndex = -1;
+  for (const [index, stats] of colorStats.entries()) {
+    if (stats.count > maxCount) {
+      maxCount = stats.count;
+      maxColorIndex = index;
+    }
+  }
 
+  // 2. 将所有颜色按 colorIndex (0, 1, 2...) 排序，恢复原本的“从浅到深”
+  const allEntries = Array.from(colorStats.entries()).sort((a, b) => a[0] - b[0]);
+
+  // 3. 把那个“大块头”从原队伍里过滤掉，剩下的保持原序
+  const others = allEntries.filter(([index]) => index !== maxColorIndex);
+  
+  // 4. 找到那个“大块头”的条目
+  const maxEntry = allEntries.find(([index]) => index === maxColorIndex);
+
+  // 5. 重新拼接
+  const finalResult = maxEntry ? [...others, maxEntry] : others;
+
+  //   finalResult.forEach(([index, stats]: [number, any]) => {
+  //   console.log(`[Color Debug] 索引:${index}, 颜色:${stats.hex}, 像素数:${stats.count}`);
+  // });
+
+
+
+  return finalResult.map(([colorIndex, stats]) => ({
+    colorIndex,
+    colorHex: stats.hex,
+  }));
+}
 function canExtendRun(run: Pixel[], pixel: Pixel): boolean {
   const previous = run[run.length - 1];
 
