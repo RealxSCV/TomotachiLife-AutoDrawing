@@ -138,121 +138,75 @@ function collapsePixelMapForBrush(
 // --- 孤立像素去噪函数（带全方位平局检测） ---
 function removeIsolatedPixels(
   pixelMap: PixelizationResult["pixelMap"],
+  colorCount: number
 ): PixelizationResult["pixelMap"] {
   const height = pixelMap.length;
   const width = pixelMap[0]?.length ?? 0;
+  if (height === 0 || width === 0) return pixelMap;
 
-  if (height === 0 || width === 0) {
-    return pixelMap;
-  }
+  // 1. 根据色阶设定容差：8/9色:0, 16色:1, 32色:2, 64色:3, 128色:4
+  let tolerance = 0;
+  if (colorCount >= 128) tolerance = 4;
+  else if (colorCount >= 64) tolerance = 3;
+  else if (colorCount >= 32) tolerance = 2;
+  else if (colorCount >= 16) tolerance = 1;
 
-  // 使用写时复制 (Copy-on-Write) 模式，只在修改时才复制
-  let newMap: PixelizationResult["pixelMap"] | null = null;
+  const newMap: PixelizationResult["pixelMap"] = pixelMap.map((row) =>
+    row.map((pixel) => ({ ...pixel }))
+  );
 
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
       const pixel = pixelMap[y]?.[x];
-      
-      // 忽略透明像素
-      if (!pixel || pixel.alpha <= 0 || pixel.colorIndex < 0) {
-        continue;
-      }
+      if (!pixel || pixel.alpha <= 0 || pixel.colorIndex < 0) continue;
 
-      const targetColor = pixel.colorIndex;
+      const targetColorIdx = pixel.colorIndex;
       let isIsolated = true;
 
-      // 1. 5x5 范围检测：看看周围两圈有没有“同类”
-      for (let dy = -2; dy <= 2; dy += 1) {
-        for (let dx = -2; dx <= 2; dx += 1) {
-          if (dx === 0 && dy === 0) continue; // 跳过自己
-          
-          const ny = y + dy;
-          const nx = x + dx;
-          
+      // 2. 5x5巡检
+      neighborScan:
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const ny = y + dy, nx = x + dx;
           if (ny >= 0 && ny < height && nx >= 0 && nx < width) {
             const neighbor = pixelMap[ny]?.[nx];
-            if (neighbor && neighbor.alpha > 0 && neighbor.colorIndex === targetColor) {
-              isIsolated = false; // 找到同类了，它不是孤立的
-              break;
-            }
-          }
-        }
-        if (!isIsolated) break;
-      }
-
-      // 2. 如果真的是孤立像素，开始 3x3 范围的同化
-      if (isIsolated) {
-        const colorCounts = new Map<number, { count: number; hex: string }>();
-        // 记录四个方向的颜色
-        let topColor = -1, bottomColor = -1, leftColor = -1, rightColor = -1;
-
-        // 收集周围一圈（3x3）的颜色
-        for (let dy = -1; dy <= 1; dy += 1) {
-          for (let dx = -1; dx <= 1; dx += 1) {
-            if (dx === 0 && dy === 0) continue;
-            
-            const ny = y + dy;
-            const nx = x + dx;
-            
-            if (ny >= 0 && ny < height && nx >= 0 && nx < width) {
-              const neighbor = pixelMap[ny]?.[nx];
-              if (neighbor && neighbor.alpha > 0 && neighbor.colorIndex >= 0) {
-                const cIdx = neighbor.colorIndex;
-                
-                // 记录正上、正下、正左、正右的颜色，留作打平局时的优先级参考
-                if (dx === 0 && dy === -1) topColor = cIdx;
-                if (dx === 0 && dy === 1) bottomColor = cIdx;
-                if (dx === -1 && dy === 0) leftColor = cIdx;
-                if (dx === 1 && dy === 0) rightColor = cIdx;
-
-                const existing = colorCounts.get(cIdx);
-                if (existing) {
-                  existing.count += 1;
-                } else {
-                  colorCounts.set(cIdx, { count: 1, hex: neighbor.colorHex });
-                }
+            if (neighbor && neighbor.alpha > 0 && neighbor.colorIndex >= 0) {
+              // 判定索引距离是否在容差内
+              if (Math.abs(neighbor.colorIndex - targetColorIdx) <= tolerance) {
+                isIsolated = false;
+                break neighborScan;
               }
             }
           }
         }
+      }
 
-        // 3. 找出数量最多的颜色替换它
-        if (colorCounts.size > 0) {
-          let maxCount = 0;
-          for (const info of colorCounts.values()) {
-            if (info.count > maxCount) maxCount = info.count;
-          }
+      // 3. 同化
+      if (isIsolated) {
+        const targetPixel = newMap[y]?.[x];
+        if (!targetPixel) continue;
+        
+        const top = pixelMap[y - 1]?.[x];
+        const bottom = pixelMap[y + 1]?.[x];
+        const left = pixelMap[y]?.[x - 1];
+        const right = pixelMap[y]?.[x + 1];
 
-          // 挑出所有达到最高票数的颜色（可能有一个，也可能有多个打平）
-          const candidates = Array.from(colorCounts.entries())
-            .filter(([_, info]) => info.count === maxCount)
-            .map(([idx, info]) => ({ idx, hex: info.hex }));
-
-          // 建立候选颜色 Map，优化查找效率从 O(n) 改为 O(1)
-          const candidateMap = new Map(candidates.map((c) => [c.idx, c]));
-          const winner = candidateMap.get(topColor) 
-            || candidateMap.get(bottomColor) 
-            || candidateMap.get(leftColor) 
-            || candidateMap.get(rightColor) 
-            || candidates[0];
-
-          // 4. 按需初始化 newMap（写时复制）
-          if (!newMap) {
-            newMap = pixelMap.map((row) => row.map((pixel) => ({ ...pixel })));
-          }
-
-          // 5. 安全地赋值
-          const targetPixel = newMap?.[y]?.[x];
-          if (winner && targetPixel) {
-            targetPixel.colorIndex = winner.idx;
-            targetPixel.colorHex = winner.hex;
-          }
+        const neighbor = (top && top.alpha > 0) ? top : 
+                         (bottom && bottom.alpha > 0) ? bottom : 
+                         (left && left.alpha > 0) ? left : 
+                         (right && right.alpha > 0) ? right : null;
+        if (neighbor) {
+          targetPixel.colorIndex = neighbor.colorIndex;
+          targetPixel.colorHex = neighbor.colorHex;
+        } else {
+          targetPixel.alpha = 0;
+          targetPixel.colorIndex = -1;
         }
       }
     }
   }
-
-  return newMap ?? pixelMap;
+  return newMap;
 }
 
 export async function pixelizeImage(
@@ -298,7 +252,7 @@ export async function pixelizeImage(
   // 根据选项参数是否启用去噪
   const enableDenoise = options?.enableDenoise ?? profile.enableDenoise;
   if (enableDenoise) {
-    pixelMap = removeIsolatedPixels(pixelMap);
+    pixelMap = removeIsolatedPixels(pixelMap, profile.colorCount);
   }
 
   const usedColorIndexes = Array.from(
