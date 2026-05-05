@@ -40,6 +40,7 @@ export async function generateDrawPlan(
     imageOffsetYPercent?: number;
     removeBackground?: boolean;
     drawingMask?: DrawingMask | null;
+    enableDenoise?: boolean;
     pathStrategy?: PathStrategy;
   },
 ): Promise<DrawPlan> {

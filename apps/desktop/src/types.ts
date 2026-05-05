@@ -59,6 +59,7 @@ export interface DrawingProfile {
   startColorIndex: number;
   centerToTopLeftDx: number;
   centerToTopLeftDy: number;
+  enableDenoise: boolean;
 }
 
 export interface PixelizationResult {

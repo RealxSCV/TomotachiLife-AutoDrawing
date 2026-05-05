@@ -264,6 +264,7 @@ export async function pixelizeImage(
     imageOffsetYPercent?: number;
     removeBackground?: boolean;
     drawingMask?: DrawingMask | null;
+    enableDenoise?: boolean;
   },
 ): Promise<PixelizationResult> {
   const grid = createBrushGrid(profile);
@@ -293,7 +294,12 @@ export async function pixelizeImage(
     palette: profile.palette,
   });
   let pixelMap = collapsePixelMapForBrush(fullPixelMap, profile, drawingMaskCoverageMap);
-  pixelMap = removeIsolatedPixels(pixelMap);// --- 新加的去噪函数调用 ---
+  
+  // 根据选项参数是否启用去噪
+  const enableDenoise = options?.enableDenoise ?? profile.enableDenoise;
+  if (enableDenoise) {
+    pixelMap = removeIsolatedPixels(pixelMap);
+  }
 
   const usedColorIndexes = Array.from(
     new Set(

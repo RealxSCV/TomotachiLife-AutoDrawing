@@ -336,16 +336,26 @@
               <p>这里显示像素化结果、模板裁剪效果和关键统计信息。</p>
             </div>
 
-            <div class="preview-tools">
-              <label class="checkbox-card" for="auto-remove-background-checkbox">
-                <input id="auto-remove-background-checkbox" type="checkbox" />
-                <span class="checkbox-copy">
-                  <strong>自动扣背景</strong>
-                  <small>适合白底、浅灰底、棋盘格假透明图。真正带透明通道的 PNG 不需要开启。</small>
-                </span>
-              </label>
+            <div class="preview-tools" style="display: flex; gap: 16px; align-items: stretch;">
+              <div style="display: flex; flex-direction: column; gap: 16px; flex: 2;">
+                <label class="checkbox-card" for="auto-remove-background-checkbox" style="margin: 0;">
+                  <input id="auto-remove-background-checkbox" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <strong>自动扣背景</strong>
+                    <small>适合白底、浅灰底、棋盘格假透明图。真正带透明通道的 PNG 不需要开启。</small>
+                  </span>
+                </label>
 
-              <label class="preview-select-card">
+                <label class="checkbox-card" for="denoise-checkbox" style="margin: 0;">
+                  <input id="denoise-checkbox" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <strong>启用降噪</strong>
+                    <small>寻找孤立像素点并去除，从而节约绘制时间。仅对选用小笔刷、色阶数量少的情况下适用。如果色阶数量在 16 及以上，会缺失很多细节。</small>
+                  </span>
+                </label>
+              </div>
+
+              <label class="preview-select-card" style="flex: 1; margin: 0; display: flex; flex-direction: column; justify-content: space-between;">
                 <span>辅助线</span>
                 <select id="preview-guide-select">
                   <option value="none" selected>关闭</option>

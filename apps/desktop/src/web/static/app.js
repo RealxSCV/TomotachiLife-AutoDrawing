@@ -78,6 +78,7 @@ const state = {
     previewGuideMode: "none",
     colorMode: "mono",
     colorCount: 32,
+    enableDenoise: false,
     removeBackground: false,
     usedColorIndexes: [],
     generatedPalette: [],
@@ -217,6 +218,7 @@ const els = {
   templatePreviewLabel: document.getElementById("template-preview-label"),
   colorModeSelect: document.getElementById("color-mode-select"),
   colorCountSelect: document.getElementById("color-count-select"),
+  denoiseCheckbox: document.getElementById("denoise-checkbox"),
   thresholdLabel: document.getElementById("threshold-label"),
   thresholdRange: document.getElementById("threshold-range"),
   thresholdValue: document.getElementById("threshold-value"),
@@ -530,6 +532,12 @@ els.colorModeSelect.addEventListener("change", () => {
 
 els.colorCountSelect.addEventListener("change", () => {
   state.studio.colorCount = Number(els.colorCountSelect.value || state.studio.colorCount);
+  syncStudioUi();
+  scheduleStudioPreviewRefresh();
+});
+
+els.denoiseCheckbox.addEventListener("change", () => {
+  state.studio.enableDenoise = els.denoiseCheckbox.checked;
   syncStudioUi();
   scheduleStudioPreviewRefresh();
 });
@@ -958,6 +966,7 @@ function buildStudioGeneratePayload() {
     imageOffsetYPercent: state.studio.imageOffsetYPercent,
     mode: state.studio.colorMode,
     colors: state.studio.colorCount,
+    enableDenoise: state.studio.enableDenoise,
     resizeMode: "contain",
     threshold: Number(els.thresholdRange.value),
     previewScale: 12,
@@ -1021,6 +1030,8 @@ function applyGeneratedStudioPayload(payload) {
       : "mono";
   state.studio.colorCount = payload.profile.colorCount ?? state.studio.colorCount;
   state.studio.removeBackground = payload.profile.removeBackground === true;
+  state.studio.enableDenoise = payload.profile.enableDenoise === true;
+  els.denoiseCheckbox.checked = state.studio.enableDenoise;
 
   els.commandsOutput.value = payload.commands.join("\n");
   els.previewImage.src = payload.previewDataUrl;

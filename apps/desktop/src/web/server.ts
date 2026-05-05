@@ -1051,6 +1051,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
     palette?: string[];
     previewScale?: number;
     removeBackground?: boolean;
+    enableDenoise?: boolean;
     inputDelay?: number;
     buttonPressDuration?: number;
   };
@@ -1094,6 +1095,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
       body.buttonPressDuration,
       baseProfile.buttonPressDuration,
     ),
+    enableDenoise: body.enableDenoise ?? baseProfile.enableDenoise,
   };
   const drawingMask = await loadDrawingTemplateMask(template.id, profile.canvasWidth, profile.canvasHeight);
 
@@ -1106,6 +1108,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
       imageOffsetXPercent,
       imageOffsetYPercent,
       removeBackground: body.removeBackground === true,
+      ...(body.enableDenoise !== undefined ? { enableDenoise: body.enableDenoise } : {}),
       drawingMask,
     },
   );
@@ -1124,6 +1127,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
       colorMode: profile.colorMode,
       colorCount: profile.colorCount,
       removeBackground: body.removeBackground === true,
+      enableDenoise: body.enableDenoise === true,
       palette: plan.paletteHexes,
       baudRate: profile.baudRate,
       ackTimeoutMs: profile.ackTimeoutMs,
