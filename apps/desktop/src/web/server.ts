@@ -1012,6 +1012,7 @@ function makeCliOverrides(input: {
   resizeMode?: "contain" | "cover";
   mode?: "mono" | "palette" | "official";
   palette?: string[];
+  enableDenoise?: boolean;
 }): CliOptions {
   return {
     send: false,
@@ -1028,6 +1029,7 @@ function makeCliOverrides(input: {
       resizeMode: input.resizeMode,
       mode: input.mode,
       palette: input.palette,
+      enableDenoise: input.enableDenoise,
     }),
   };
 }
@@ -1074,6 +1076,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
         resizeMode: body.resizeMode ?? loadedProfile.resizeMode,
         mode: body.mode,
         palette: body.palette,
+        enableDenoise: body.enableDenoise,
       }),
     ),
   );
@@ -1127,7 +1130,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
       colorMode: profile.colorMode,
       colorCount: profile.colorCount,
       removeBackground: body.removeBackground === true,
-      enableDenoise: body.enableDenoise === true,
+      enableDenoise: profile.enableDenoise === true,
       palette: plan.paletteHexes,
       baudRate: profile.baudRate,
       ackTimeoutMs: profile.ackTimeoutMs,

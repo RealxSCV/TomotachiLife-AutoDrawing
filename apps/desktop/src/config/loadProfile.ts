@@ -89,5 +89,6 @@ export async function loadProfile(profilePath?: string): Promise<DrawingProfile>
     startColorIndex: toNonNegativeNumber(parsed.startColorIndex, DEFAULT_PROFILE.startColorIndex),
     centerToTopLeftDx: toNumber(parsed.centerToTopLeftDx, DEFAULT_PROFILE.centerToTopLeftDx),
     centerToTopLeftDy: toNumber(parsed.centerToTopLeftDy, DEFAULT_PROFILE.centerToTopLeftDy),
+    enableDenoise: parsed.enableDenoise ?? DEFAULT_PROFILE.enableDenoise,
   };
 }

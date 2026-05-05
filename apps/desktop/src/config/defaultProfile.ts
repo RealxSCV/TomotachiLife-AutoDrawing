@@ -111,4 +111,5 @@ export const DEFAULT_PROFILE: DrawingProfile = {
   startColorIndex: 0,
   centerToTopLeftDx: 0,
   centerToTopLeftDy: 0,
+  enableDenoise: false,
 };

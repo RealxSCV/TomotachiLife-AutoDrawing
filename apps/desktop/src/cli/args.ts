@@ -25,6 +25,7 @@ export interface CliOptions {
   resizeMode?: ResizeMode;
   mode?: ColorMode;
   palette?: string[];
+  enableDenoise?: boolean;
   simulateAckDelay?: number;
   simulateErrorAt?: number;
   previewScale: number;
@@ -154,6 +155,9 @@ export function parseCliArgs(rawArgs: string[]): CliOptions {
       case "-h":
         options.help = true;
         break;
+      case "--denoise":
+        options.enableDenoise = true;
+        break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
     }
@@ -189,6 +193,7 @@ export function applyCliOptions(profile: DrawingProfile, options: CliOptions): D
       colorCount,
       monoThreshold: options.threshold ?? profile.monoThreshold,
       palette: OFFICIAL_PALETTE.slice(),
+      ...(options.enableDenoise !== undefined ? { enableDenoise: options.enableDenoise } : {}),
     };
   }
 
@@ -210,6 +215,7 @@ export function applyCliOptions(profile: DrawingProfile, options: CliOptions): D
     colorCount: requestedColors,
     monoThreshold: options.threshold ?? profile.monoThreshold,
     palette,
+    ...(options.enableDenoise !== undefined ? { enableDenoise: options.enableDenoise } : {}),
   };
 }
 
@@ -248,6 +254,7 @@ export function printHelp(): string {
     '  --palette <csv>          Palette override, e.g. "#000000,#ffffff,#ff0000,#0000ff"',
     "  --resize contain|cover   Resize strategy",
     "  --baud <n>               Serial baud rate override",
+    "  --denoise                Enable isolated-pixel denoising",
     "  --help                   Show help",
     "",
     `Bundled demo asset: ${exampleImage}`,
