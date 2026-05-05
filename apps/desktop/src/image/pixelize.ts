@@ -135,7 +135,6 @@ function collapsePixelMapForBrush(
   return collapsed;
 }
 
-// --- 新加的去噪函数 ---
 // --- 孤立像素去噪函数（带全方位平局检测） ---
 function removeIsolatedPixels(
   pixelMap: PixelizationResult["pixelMap"],
@@ -147,10 +146,8 @@ function removeIsolatedPixels(
     return pixelMap;
   }
 
-  // 深拷贝一份画布，避免在检测时互相影响
-  const newMap: PixelizationResult["pixelMap"] = pixelMap.map((row) =>
-    row.map((pixel) => ({ ...pixel })),
-  );
+  // 使用写时复制 (Copy-on-Write) 模式，只在修改时才复制
+  let newMap: PixelizationResult["pixelMap"] | null = null;
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -231,16 +228,21 @@ function removeIsolatedPixels(
             .filter(([_, info]) => info.count === maxCount)
             .map(([idx, info]) => ({ idx, hex: info.hex }));
 
-          const topCandidate = candidates.find((c) => c.idx === topColor);
-          const bottomCandidate = candidates.find((c) => c.idx === bottomColor);
-          const leftCandidate = candidates.find((c) => c.idx === leftColor);
-          const rightCandidate = candidates.find((c) => c.idx === rightColor);
+          // 建立候选颜色 Map，优化查找效率从 O(n) 改为 O(1)
+          const candidateMap = new Map(candidates.map((c) => [c.idx, c]));
+          const winner = candidateMap.get(topColor) 
+            || candidateMap.get(bottomColor) 
+            || candidateMap.get(leftColor) 
+            || candidateMap.get(rightColor) 
+            || candidates[0];
 
-          // 核心逻辑：按 上 -> 下 -> 左 -> 右 的优先级找，如果都没有，保底拿候选里的第一个
-          const winner = topCandidate || bottomCandidate || leftCandidate || rightCandidate || candidates[0];
+          // 4. 按需初始化 newMap（写时复制）
+          if (!newMap) {
+            newMap = pixelMap.map((row) => row.map((pixel) => ({ ...pixel })));
+          }
 
-          // 4. 解决 TypeScript 报错：安全地赋值
-          const targetPixel = newMap[y]?.[x];
+          // 5. 安全地赋值
+          const targetPixel = newMap?.[y]?.[x];
           if (winner && targetPixel) {
             targetPixel.colorIndex = winner.idx;
             targetPixel.colorHex = winner.hex;
@@ -250,7 +252,7 @@ function removeIsolatedPixels(
     }
   }
 
-  return newMap;
+  return newMap ?? pixelMap;
 }
 
 export async function pixelizeImage(

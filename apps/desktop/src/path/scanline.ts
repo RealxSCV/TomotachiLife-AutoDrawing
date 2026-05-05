@@ -576,52 +576,48 @@ function shouldStartFromCanvasCenter(profile: DrawingProfile): boolean {
 
 function getUsedPaletteColors(pixelMap: PixelMap): Array<{ colorIndex: number; colorHex: string }> {
   const colorStats = new Map<number, { hex: string, count: number }>();
+  let maxCount = -1;
+  let maxColorIndex = -1;
 
-  // --- 统计像素数量 ---
+  // 一次遍历完成：统计像素数量 + 找出最多的颜色
   for (const row of pixelMap) {
     for (const pixel of row) {
       if (pixel.alpha <= 0 || pixel.colorIndex < 0) continue;
-      const existing = colorStats.get(pixel.colorIndex);
+      const cIdx = pixel.colorIndex;
+      const existing = colorStats.get(cIdx);
+      
       if (existing) {
         existing.count += 1;
       } else {
-        colorStats.set(pixel.colorIndex, { hex: pixel.colorHex, count: 1 });
+        colorStats.set(cIdx, { hex: pixel.colorHex, count: 1 });
+      }
+      
+      // 同时跟踪最多的颜色
+      const currentCount = colorStats.get(cIdx)?.count ?? 0;
+      if (currentCount > maxCount) {
+        maxCount = currentCount;
+        maxColorIndex = cIdx;
       }
     }
   }
 
-  // 1. 找出像素最多的那个颜色 Index
-  let maxCount = -1;
-  let maxColorIndex = -1;
-  for (const [index, stats] of colorStats.entries()) {
-    if (stats.count > maxCount) {
-      maxCount = stats.count;
-      maxColorIndex = index;
+  // 按 colorIndex 排序并重组
+  const result: Array<{ colorIndex: number; colorHex: string }> = [];
+  const maxEntry = colorStats.get(maxColorIndex);
+
+  // 将所有颜色按原序添加，除了最大的
+  for (const [index, stats] of Array.from(colorStats.entries()).sort((a, b) => a[0] - b[0])) {
+    if (index !== maxColorIndex) {
+      result.push({ colorIndex: index, colorHex: stats.hex });
     }
   }
 
-  // 2. 将所有颜色按 colorIndex (0, 1, 2...) 排序，恢复原本的“从浅到深”
-  const allEntries = Array.from(colorStats.entries()).sort((a, b) => a[0] - b[0]);
+  // 最后添加最多的颜色
+  if (maxEntry) {
+    result.push({ colorIndex: maxColorIndex, colorHex: maxEntry.hex });
+  }
 
-  // 3. 把那个“大块头”从原队伍里过滤掉，剩下的保持原序
-  const others = allEntries.filter(([index]) => index !== maxColorIndex);
-  
-  // 4. 找到那个“大块头”的条目
-  const maxEntry = allEntries.find(([index]) => index === maxColorIndex);
-
-  // 5. 重新拼接
-  const finalResult = maxEntry ? [...others, maxEntry] : others;
-
-  //   finalResult.forEach(([index, stats]: [number, any]) => {
-  //   console.log(`[Color Debug] 索引:${index}, 颜色:${stats.hex}, 像素数:${stats.count}`);
-  // });
-
-
-
-  return finalResult.map(([colorIndex, stats]) => ({
-    colorIndex,
-    colorHex: stats.hex,
-  }));
+  return result;
 }
 function canExtendRun(run: Pixel[], pixel: Pixel): boolean {
   const previous = run[run.length - 1];
