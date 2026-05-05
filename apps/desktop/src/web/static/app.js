@@ -1039,17 +1039,13 @@ function applyGeneratedStudioPayload(payload) {
     ? `${payload.stats.commandCount} · L ${payload.stats.pathStats.lineRunCount}`
     : String(payload.stats.commandCount);
   // 如果有“精华耗时”，就显示两个时间，方便对比
-  if (payload.stats.essentialRuntimeLabel && payload.stats.essentialRuntimeLabel !== payload.stats.estimatedRuntimeLabel) {
-    els.statRuntime.innerHTML = `
-      <span title="全自动完成总时长">${payload.stats.estimatedRuntimeLabel}</span>
-      <br/>
-      <small title="除去最后一种背景色后的时长" style="color: #c44;">
-        (手动填色前: ${payload.stats.essentialRuntimeLabel})
-      </small>
-    `;
-  } else {
-  els.statRuntime.textContent = payload.stats.estimatedRuntimeLabel;
-  }
+const mainTime = payload.stats.estimatedRuntimeLabel;
+const subTime = payload.stats.essentialRuntimeLabel;
+if (payload.profile.colorMode !== "mono" && subTime && subTime !== mainTime) {
+  els.statRuntime.innerHTML = `${mainTime}<div style="font-size: 0.65em; font-weight: 400; opacity: 0.8; margin-top: 4px;">(手动填色: ${subTime})</div>`;
+} else {
+  els.statRuntime.textContent = mainTime;
+}
   void updatePreviewBounds(payload);
   renderOfficialPalettePreview();
 }
