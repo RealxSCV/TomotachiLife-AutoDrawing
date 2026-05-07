@@ -1,5 +1,7 @@
 # Windows 平台补充
 
+[English](en/setup-windows.md)
+
 这份文档只补充 `Windows x64` 平台差异。
 完整主流程请先看：[快速上手](user-trial-guide.md)。
 
@@ -11,7 +13,6 @@
 当前推荐优先使用：
 
 - `Windows x64` 桌面端安装包
-- 如果你在中国境内使用、且不方便翻墙，额外看：[中国境内网络受限补充](troubleshooting-mainland-network.md)
 
 ## 2. 首次安装时最常见的 Windows 差异
 
@@ -67,8 +68,6 @@ npm run ui:dev
 - `npm install` 很慢
 - `PlatformIO` / `Python` 安装失败
 
-优先改看：[中国境内网络受限补充](troubleshooting-mainland-network.md)。
-
 ## 4. Windows 下的手动 PlatformIO 命令
 
 如果你需要手动确认 `PlatformIO` 是否可用，可以先执行：
@@ -95,6 +94,5 @@ $env:USERPROFILE\.platformio\penv\Scripts\pio.exe run -e esp32dev_wireless -t up
 - 不要安装在中文目录下
 - 首次准备 `PlatformIO`、下载工具链与部分依赖时，需要稳定联网
 - 如果没有 `COM` 口，优先怀疑数据线、驱动或开发板个体差异
-- 如果主要问题是下载环境受限，而不是串口或驱动，优先看：[中国境内网络受限补充](troubleshooting-mainland-network.md)
 
 还需要继续排障时，请看：[排障说明](troubleshooting.md)。
