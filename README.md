@@ -19,7 +19,7 @@ This README includes both Simplified Chinese and English sections. Use the butto
 
 <p>
   <a href="docs/media/demo-video.mp4">
-    <img src="docs/media/demo-real-device.jpeg" alt="Friend Maker real device demo on Nintendo Switch" width="760" />
+    <img src="docs/media/demo-real-device.jpeg" alt="Friend Maker real device demo on Nintendo Switch" width="560" />
   </a>
 </p>
 
