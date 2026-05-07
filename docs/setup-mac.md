@@ -1,5 +1,7 @@
 # macOS 平台补充
 
+[English](en/setup-mac.md)
+
 这份文档只补充 `macOS` 平台差异。
 完整主流程请先看：[快速上手](user-trial-guide.md)。
 

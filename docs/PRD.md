@@ -1,7 +1,9 @@
-# 朋友制作器 / Friend Maker PRD
+# 朋友制作器 PRD
+
+[English](en/PRD.md)
 
 版本：v0.2
-状态：Active Alpha
+状态：Alpha 试用中
 更新时间：2026-04-29
 
 ## 1. 产品概述

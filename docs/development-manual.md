@@ -1,5 +1,7 @@
 # 朋友制作器开发手册
 
+[English](en/development-manual.md)
+
 专为 Switch 版《朋友收集：梦想生活》制作。
 
 更新时间：2026-04-29

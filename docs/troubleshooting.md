@@ -1,5 +1,7 @@
 # 朋友制作器排障说明
 
+[English](en/troubleshooting.md)
+
 这份文档只处理当前公开流程里最高频的问题。
 建议按“你卡在哪一页，就先看哪一节”的方式使用。
 
@@ -96,13 +98,16 @@ python -m pip install --user --upgrade platformio
    - 明确写着 `NodeMCU-32S` 的板子可以改用 `nodemcu_32s_wireless`
 4. 再次点击 `编译并刷入固件`
 5. 如果板子进不去下载模式，按住实体板上的 `BOOT` 键，再重新刷入
+6. 如果桌面端里反复刷写失败，先改用命令行手动刷入，确认固件链路本身是否正常
 
-源码路线兜底命令：
+手动刷入命令：
 
 ```bash
 cd /path/to/friendmaker/firmware/esp32
 pio run -e esp32dev_wireless -t upload
 ```
+
+如果 `pio` 不在 `PATH` 里，请改用完整路径，参考：[快速上手](user-trial-guide.md)。
 
 ## 4. 手柄连不上或连接易断
 
@@ -122,6 +127,9 @@ pio run -e esp32dev_wireless -t upload
    - 当前这块开发板是否存在个体差异
    - 附近是否有太多同时活跃的蓝牙设备
    - 当前开发板是否已经明显发热
+7. 如果按上面步骤仍然实在连接不上，也可以试试 [夸克网盘：friend maker（张老师优化版本）](https://pan.quark.cn/s/08ca5bdebc46)
+
+夸克口令：`/~995f3YSMso~:/`
 
 说明：
 
