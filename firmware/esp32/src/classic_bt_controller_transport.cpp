@@ -35,7 +35,7 @@ constexpr uint16_t kHidCongestionRetryBudgetMs = 300;
 constexpr uint16_t kIdleDisconnectedReportIntervalMs = 100;
 constexpr uint16_t kIdlePrePairingReportIntervalMs = 30;
 constexpr uint16_t kIdleCongestedReportIntervalMs = 45;
-constexpr uint16_t kIdleConnectedReportIntervalMs = 15;
+constexpr uint16_t kIdleConnectedReportIntervalMs = 8;
 
 uint8_t kHidDescriptor[] = {
     0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x01, 0xff, 0x85, 0x21, 0x09,
@@ -114,8 +114,8 @@ String formatBluetoothAddress(const uint8_t address[6]) {
 // using the actual BT MAC address — see buildReply02().
 uint8_t kReply02[] = {
     0x00, 0x8E, 0x00, 0x00, 0x00, 0x00, 0x08, 0x80, 0x00, 0x00, 0x00, 0x00,
-    0x82, 0x02, 0x04, 0x00, kControllerTypeProCon, 0x02, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x82, 0x02, 0x04, 0x00, kControllerTypeProCon, 0x02, 0xD4, 0xF0, 0x57, 0x6E,
+    0xF0, 0xD7, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00};
 
@@ -252,7 +252,7 @@ bool ClassicBtControllerTransport::initializeNvsAndBaseAddress() {
   }
 
   uint8_t baseMac[6] = {};
-  const char *baseMacSource = "efuse-derived";
+  const char *baseMacSource = "factory";
   bool shouldPersistDerivedMac = false;
   nvs_handle handle;
   err = nvs_open("storage", NVS_READWRITE, &handle);
@@ -262,19 +262,27 @@ bool ClassicBtControllerTransport::initializeNvsAndBaseAddress() {
     if (err == ESP_OK && size == sizeof(baseMac)) {
       baseMacSource = "nvs";
     } else {
-      if (!deriveDeterministicBaseMac(baseMac)) {
+      uint8_t factoryMac[6] = {};
+      err = esp_efuse_mac_get_default(factoryMac);
+      if (err != ESP_OK) {
+        Serial.printf("WARN efuse_mac_get_default failed err=%s\n", esp_err_to_name(err));
         nvs_close(handle);
         return false;
       }
+      std::memcpy(baseMac, factoryMac, 6);
       shouldPersistDerivedMac = true;
     }
   } else {
     Serial.printf(
-        "WARN nvs_open failed err=%s; using deterministic base mac fallback\n",
+        "WARN nvs_open failed err=%s; using factory mac fallback\n",
         esp_err_to_name(err));
-    if (!deriveDeterministicBaseMac(baseMac)) {
+    uint8_t factoryMac[6] = {};
+    err = esp_efuse_mac_get_default(factoryMac);
+    if (err != ESP_OK) {
+      Serial.printf("WARN efuse_mac_get_default failed err=%s\n", esp_err_to_name(err));
       return false;
     }
+    std::memcpy(baseMac, factoryMac, 6);
   }
 
   if (shouldPersistDerivedMac) {
@@ -632,36 +640,26 @@ uint16_t ClassicBtControllerTransport::idleSendIntervalMs() const {
 void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
   auto *transport = static_cast<ClassicBtControllerTransport *>(param);
   while (true) {
-    // ACL TX stall detection: after the sniff-mode LMP collision (Switch PM
-    // vs BTA_DM_PM race), the ESP32 BT controller's num_completed_pkts events
-    // stop firing, pinning the L2CAP credit counter at 0. Sends queue (ESP_OK)
-    // but SEND_REPORT_EVT comes back reason=8 indefinitely. Detect this by
-    // checking how long since the last successful EVT; if > 800 ms while
-    // connected+paired, disconnect the HID channel so the Switch reconnects.
-    // We do NOT do a full stack restart — just an HID disconnect. The ACL link
-    // stays up (or the Switch tears it down), and the Switch reconnects in ~1 s.
+    // ACL TX stall detection: DISABLED for Switch Lite compatibility.
+    // The main branch doesn't have this detection, and it may be causing
+    // premature disconnects on Switch Lite after mode transitions.
+    /*
+    const uint32_t msSinceLastSend = transport->lastSuccessfulSendMs_ > 0
+        ? (millis() - transport->lastSuccessfulSendMs_) : 0;
+    const uint32_t msSinceModeChange = transport->lastModeChangeMs_ > 0
+        ? (millis() - transport->lastModeChangeMs_) : UINT32_MAX;
     if (transport->paired_ && transport->connected_ &&
         transport->lastSuccessfulSendMs_ > 0 &&
-        (millis() - transport->lastSuccessfulSendMs_) > 800) {
-      Serial.println("INFO bt acl-stall detected, disconnecting hid");
-      // Reset the timer first so this branch doesn't retrigger before
-      // paired_/connected_ clear in the upcoming CLOSE_EVT callback.
+        msSinceLastSend > 5000 &&
+        msSinceModeChange > 2000) {
+      Serial.printf(
+          "INFO bt acl-stall detected no-send=%lums disconnecting\n",
+          static_cast<unsigned long>(msSinceLastSend));
       transport->lastSuccessfulSendMs_ = 0;
       esp_bt_hid_device_disconnect();
-      // Yield so CLOSE_EVT fires and clears paired_/connected_.
-      vTaskDelay(pdMS_TO_TICKS(200));
       continue;
     }
-
-    // Deferred reconnect after ACL stall disconnect: the HID stack needs ~500 ms
-    // to fully close before a new connect can succeed (avoids busy status:5).
-    if (transport->pendingReconnectAfterMs_ > 0 &&
-        millis() >= transport->pendingReconnectAfterMs_) {
-      transport->pendingReconnectAfterMs_ = 0;
-      if (transport->hasPeerAddress_ && !transport->connected_) {
-        transport->attemptVirtualCablePlug(transport->lastPeerAddress_, "stall-reconnect");
-      }
-    }
+    */
 
     // Only send 0x30 reports after pairing handshake completes (paired_ = true).
     // Before that, the interrupt channel must be quiet so the Switch can drive
@@ -670,7 +668,7 @@ void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
     // unsolicited 0x30 reports before subcmd 0x03 sets the input report mode.
     // The inputReportSendMutex_ blocks this task during explicit input so it
     // sends immediately when explicit input ends (no stale delay gap).
-    if (transport->paired_) {
+    if (!transport->explicitInputActive_) {
       transport->sendCurrentInputReport(false);
     }
     vTaskDelay(pdMS_TO_TICKS(transport->idleSendIntervalMs()));
@@ -960,6 +958,10 @@ bool ClassicBtControllerTransport::beginExplicitInput() {
     return true;
   }
 
+  if (inputReportSendMutex_ == nullptr) {
+    return true;
+  }
+
   xSemaphoreTakeRecursive(inputReportSendMutex_, portMAX_DELAY);
 
   // Wait for in-flight idle-send BTA callbacks to drain BEFORE resetting the
@@ -1143,7 +1145,7 @@ void ClassicBtControllerTransport::processIncomingReport(uint8_t reportId, uint1
 
   if (data[9] == 2) {
     // Subcmd 0x02: Request Device Info. Bytes 18-23 must be our actual BT MAC
-    // address. Switch Lite firmware validates this against the advertising MAC.
+    // address. Switch firmware validates this against the advertising MAC.
     const uint8_t *selfMac = esp_bt_dev_get_address();
     if (selfMac != nullptr) {
       std::memcpy(&kReply02[18], selfMac, 6);
@@ -1164,7 +1166,9 @@ void ClassicBtControllerTransport::processIncomingReport(uint8_t reportId, uint1
     return;
   }
   if (data[9] == 3) {
+    // Explicitly acknowledge the transition to Report Mode 0x30
     sendSubcommandReply(0x21, kReply03, sizeof(kReply03), "reply03");
+    markControllerPaired(); // Ensure the send task knows we are live
     return;
   }
   if (data[9] == 4) {
@@ -1241,10 +1245,14 @@ void ClassicBtControllerTransport::handleGapEvent(int event, void *rawParam) {
           static_cast<unsigned long>(param->qos_cmpl.t_poll));
       break;
     case ESP_BT_GAP_MODE_CHG_EVT:
+      lastModeChangeMs_ = millis();
       Serial.printf("INFO bt mode-change mode=%u\n", param->mode_chg.mode);
       break;
     case ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT:
       Serial.printf("INFO bt acl-connect status=%u\n", param->acl_conn_cmpl_stat.stat);
+      if (param->acl_conn_cmpl_stat.stat == 0 && hasPeerAddress_ && !connected_) {
+        attemptVirtualCablePlug(lastPeerAddress_, "acl-connect");
+      }
       break;
     case ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT:
       Serial.printf("INFO bt acl-disconnect reason=%u\n", param->acl_disconn_cmpl_stat.reason);
@@ -1319,11 +1327,11 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
       if (connected_) {
         std::memcpy(lastPeerAddress_, param->open.bd_addr, sizeof(lastPeerAddress_));
         hasPeerAddress_ = true;
-        esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
-        // Do NOT call esp_bt_gap_set_qos here. The QoS request races with
-        // BTA_DM_PM's sniff request, producing conflicting LMP transactions:
-        // BTM_ERR_PROCESSING (0x23) → sniff intv=8 → mode chaos. After that,
-        // the ACL TX path stalls and L2CAP stays permanently congested.
+        // NEW: Add a 500ms delay here before allowing the task to start.
+        // This gives the Switch Lite time to stabilize the INTR channel 
+        // after the CTRL channel is open.
+        delay(500);
+        // QoS settings not available in ESP-IDF 4.4.7
         ensureSendTask();
         // Do not send any reports here. The Switch drives the subcmd handshake
         // (0x02 device info, 0x08, SPI reads, 0x30 player lights). Sending
@@ -1339,17 +1347,11 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
     case ESP_HIDD_CLOSE_EVT: {
       lastHidCloseStatus_ = param->close.status;
       lastHidCloseConnStatus_ = param->close.conn_status;
-      const bool hadPeer = hasPeerAddress_;
       enterReconnectableState("hid-close");
       Serial.printf(
           "INFO bt hid event=close status=%d conn=%d\n",
           param->close.status,
           param->close.conn_status);
-      // Schedule deferred reconnect via send task (not inline here) so the
-      // HID stack has time to fully settle before the next connect attempt.
-      if (hadPeer && appRegistered_ && hidReady_) {
-        pendingReconnectAfterMs_ = millis() + 500;
-      }
       break;
     }
     case ESP_HIDD_SEND_REPORT_EVT:

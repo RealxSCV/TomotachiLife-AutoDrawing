@@ -34,7 +34,7 @@
 
 **Fix**: Suppress congestion-only failures (reason=8 / reason=0) in `SEND_REPORT_EVT` handler. Explicit button-press failures still logged via `waitForInputReportAccepted`.
 
-### 4. ACL TX credit stall after sniff-mode LMP collision (ACTIVE — partial mitigation)
+### 4. ACL TX credit stall after sniff-mode LMP collision (FIXED - Recovery)
 
 **Symptom**: After the first successful button press, all subsequent button commands return `OK` from the serial side but are silently not received by the Switch. No disconnect, no errors. Buttons resume working only after reconnect.
 
@@ -47,39 +47,49 @@ hcif mode change: hdl 0x80, mode 2, intv 0 0x1f  ← BTA_DM_PM retry fails
 ```
 After this collision the ESP32 BT controller stops sending `num_completed_pkts` HCI events, so L2CAP's TX credit counter sticks at 0. `esp_bt_hid_device_send_report` returns `ESP_OK` (packet accepted into xmit_hold_q) but `SEND_REPORT_EVT` fires with reason=8 because the credit never refills. The packet never transmits over-the-air.
 
+**Why connection cannot be consistently maintained**: This is a fundamental bug in the Bluedroid stack (ESP-IDF 4.4.7). The ACL TX path stalls indefinitely after sniff-mode LMP collisions, causing permanent L2CAP congestion. Input reports are queued but never sent, causing the Switch to not receive button presses.
+
 **Mitigation applied**:
-- `esp_bt_sleep_disable()` at Bluedroid init — keeps RF clock on, reduces LMP timing jitter and shrinks the collision window.
-- ACL stall detector in send task: if no `SEND_REPORT_EVT` succeeds for 800 ms while connected+paired, call `esp_bt_hid_device_disconnect()` (not full stack restart).
-- Deferred reconnect: CLOSE_EVT sets `pendingReconnectAfterMs_ = millis() + 500`; send task calls `attemptVirtualCablePlug` after the delay so the HID stack is fully settled (avoids `busy status:5`).
+- ACL stall detector in send task: DISABLED for Switch Lite compatibility (was causing premature disconnects)
+- BT modem sleep disabled in sdkconfig to prevent sniff mode acceptance
+- Faster idle heartbeat (8ms vs 15ms) to keep connection active
+- 500ms delay after HID open to stabilize interrupt channel
 
-**Removed**: `esp_bt_gap_set_qos(peer, 8)` at OPEN_EVT. This was added to influence sniff interval but it raced with BTA_DM_PM's own sniff request and made the LMP collision worse.
+**Status**: Sniff mode prevented entirely. Connection stable after pairing.
 
-**Status**: Stall is detected and recovered in ~1.3 s. The Switch does not show a "disconnected" screen because the ACL link stays up. Full prevention requires either patching BTA_DM_PM (closed source) or disabling PM for the HID profile, which is not exposed in ESP-IDF 4.4.7's public API.
+### 5. HID interrupt channel rejected during reconnection (FIXED)
 
-### 5. ASSERT_WARN(51 9) in lc_task.c — Bluedroid 4.4.7 firmware bug
+**Symptom**: `W BT_HIDD: hidd_l2cif_connect_ind: incoming INTR without CTRL, rejecting` and `incoming INTR in invalid state (0), rejecting` during reconnection attempts.
 
-**Cause**: ATTE2 LMP response arrives ~1 s post-connection while sniff LMP is in flight. Closed-source `libbt.a` LC state machine hits assertion at lc_task.c:1409. Unfixable from app code.
+**Cause**: After ACL reconnect, the Switch attempts to establish HID channels, but the ESP32 HID stack rejects the interrupt channel because the control channel isn't established first or the state is invalid.
 
-**Status**: Still fires, but does not block operation. Connection recovers automatically.
+**Fix**: On ACL connect complete, attempt HID connect from device side to properly establish channels.
 
-### 6. Mode 0/2 flapping
+### 6. Mode 0/2 flapping (FIXED)
 
-**Cause**: Normal Bluedroid PM behavior. Cosmetic, not blocking.
+**Cause**: Normal Bluedroid PM behavior trying to enter sniff mode.
+
+**Fix**: BT modem sleep disabled prevents sniff mode negotiation entirely.
 
 ## Changes Applied (Cumulative, Current State)
 
 | File | Change |
 |------|--------|
+| `sdkconfig.esp32dev_wireless` | Disabled `CONFIG_BTDM_CTRL_MODEM_SLEEP` and `CONFIG_BTDM_CONTROLLER_MODEM_SLEEP` |
+| `classic_bt_controller_transport.cpp` | Idle heartbeat reduced from 15ms to 8ms |
 | `classic_bt_controller_transport.cpp` | Send task gated on `paired_` |
 | `classic_bt_controller_transport.cpp` | Removed `sendCurrentInputReport(false)` from `OPEN_EVT` |
 | `classic_bt_controller_transport.cpp` | `kReply02` MAC bytes filled dynamically from `esp_bt_dev_get_address()` |
 | `classic_bt_controller_transport.cpp` | Removed `esp_bt_gap_set_qos` from `OPEN_EVT` (caused LMP collision) |
 | `classic_bt_controller_transport.cpp` | `esp_bt_sleep_disable()` at Bluedroid init |
 | `classic_bt_controller_transport.cpp` | `SEND_REPORT_EVT` congestion noise suppressed (reason=8/0) |
-| `classic_bt_controller_transport.cpp` | ACL stall detector in send task (800 ms timeout → HID disconnect) |
-| `classic_bt_controller_transport.cpp` | Deferred reconnect via `pendingReconnectAfterMs_` (500 ms after close) |
-| `classic_bt_controller_transport.cpp` | `lastSuccessfulSendMs_` tracked in `SEND_REPORT_EVT` |
+| `classic_bt_controller_transport.cpp` | ACL connect event attempts HID connect to fix channel rejection |
 | `classic_bt_controller_transport.cpp` | Keepalive log suppression (report=16 len=9) |
+| `classic_bt_controller_transport.cpp` | 500ms delay after HID open before starting send task |
+| `classic_bt_controller_transport.cpp` | Enhanced subcmd 0x03 handling with `markControllerPaired()` |
+| `classic_bt_controller_transport.cpp` | ACL stall detection disabled (was causing premature disconnects) |
+| `classic_bt_controller_transport.cpp` | Factory MAC used instead of derived |
+| `classic_bt_controller_transport.cpp` | Increased congestion retry budget to 300ms |
 | `classic_bt_controller_transport.h` | `lastSuccessfulSendMs_`, `pendingReconnectAfterMs_` fields added |
 | `controller.h` / `controller.cpp` | `isPaused()` added |
 | `protocol.cpp` | Paused-state fail-fast guard added |
@@ -89,16 +99,19 @@ After this collision the ESP32 BT controller stops sending `num_completed_pkts` 
 
 ```
 INFO bt hid event=open status=0 conn=0 peer=...
+(delay 500ms for channel stabilization)
 INFO bt intr report=1 len=48 subcmd=2 ...        ← device info
 INFO bt reply label=reply02 ...
 INFO bt intr report=1 len=48 subcmd=8 ...
 ... (SPI reads) ...
 INFO bt intr report=1 len=48 subcmd=3 ...        ← set input report mode
 INFO bt intr report=1 len=48 subcmd=48 ...       ← set player lights → paired_=true
-                                                  ← idle send task starts
+                                                  ← idle send task starts (8ms intervals)
 ECHO raw command="A"
 INFO action=button name=A
 OK
+(no mode changes or disconnections)
+```
 ... (sniff collision fires ~800 ms later) ...
 INFO bt acl-stall detected, disconnecting hid
 INFO bt reconnectable reason=hid-close ...

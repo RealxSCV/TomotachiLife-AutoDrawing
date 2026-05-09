@@ -99,8 +99,7 @@ class ClassicBtControllerTransport : public ControllerTransport {
   // Millis of the last SEND_REPORT_EVT that came back with success.
   // Used to detect ACL TX credit stalls after sniff-mode collisions.
   uint32_t lastSuccessfulSendMs_ = 0;
-  // When > 0, the send task should attempt to reconnect to lastPeerAddress_
-  // once millis() passes this value. Set by CLOSE_EVT after an ACL stall
-  // disconnect so the HID stack has time to fully settle.
-  volatile uint32_t pendingReconnectAfterMs_ = 0;
+  // Millis of the last MODE_CHG_EVT. Stall detection is suppressed for
+  // 2000 ms after a mode change to avoid false positives during sniff recovery.
+  volatile uint32_t lastModeChangeMs_ = 0;
 };
