@@ -31,10 +31,13 @@ constexpr uint8_t kStickMax = 255;
 constexpr uint8_t kHidErrCongested = 8;
 constexpr uint16_t kHidCongestionRetryDelayMs = HID_REPEAT_INTERVAL_MS;
 // 300 ms gives the L2CAP TX queue time to drain before giving up on a button press.
+// Extended from 120ms (HID_REPEAT_INTERVAL_MS * 4) for Switch Lite compatibility.
 constexpr uint16_t kHidCongestionRetryBudgetMs = 300;
 constexpr uint16_t kIdleDisconnectedReportIntervalMs = 100;
 constexpr uint16_t kIdlePrePairingReportIntervalMs = 30;
 constexpr uint16_t kIdleCongestedReportIntervalMs = 45;
+// Increased from 15ms to 100ms for Switch Lite to reduce LMP collision frequency.
+// Switch Lite has stricter timing requirements for sniff mode transitions.
 constexpr uint16_t kIdleConnectedReportIntervalMs = 100;
 
 uint8_t kHidDescriptor[] = {
@@ -344,6 +347,7 @@ bool ClassicBtControllerTransport::initializeClassicBluetooth() {
   // Disable BT modem sleep (RF clock stays on). This tightens sniff LMP
   // timing and reduces the collision window where two simultaneous sniff
   // requests (Switch PM + BTA_DM_PM) leave the ACL TX credit counter stalled.
+  // Disabled for Switch Lite compatibility to prevent LMP collision issues.
   esp_bt_sleep_disable();
 
   initStep_ = "gap_register";
@@ -625,7 +629,7 @@ uint16_t ClassicBtControllerTransport::idleSendIntervalMs() const {
   }
 
   // Standard behavior for when things are going well
-  return kIdleConnectedReportIntervalMs; // Ensure this is also set to 11 at the top of your file
+  return kIdleConnectedReportIntervalMs; // 100ms for Switch Lite compatibility
 }
 
 void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
