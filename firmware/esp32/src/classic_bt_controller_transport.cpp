@@ -656,7 +656,6 @@ void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
           "INFO bt acl-stall detected no-send=%lums disconnecting\n",
           static_cast<unsigned long>(msSinceLastSend));
       transport->lastSuccessfulSendMs_ = 0;
-      esp_bt_hid_device_disconnect();
       continue;
     }
     */
