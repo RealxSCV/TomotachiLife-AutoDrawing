@@ -1,6 +1,6 @@
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 
 import { deriveResumeProgress } from "../app/recovery.js";
 import type { BrushSize, ColorMode, ResumePlan } from "../types.js";
@@ -289,7 +289,10 @@ export class RecoverySessionStore {
 
   async writeSession(record: RecoverySessionRecord): Promise<void> {
     await this.ensureRoot();
-    await writeFile(this.resumeFilePath(record.jobId), `${JSON.stringify(record, null, 2)}\n`, "utf8");
+    const filePath = this.resumeFilePath(record.jobId);
+    const tmpPath = `${filePath}.tmp`;
+    await writeFile(tmpPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+    await rename(tmpPath, filePath);
   }
 
   async loadSession(jobId: string): Promise<RecoverySessionRecord> {
