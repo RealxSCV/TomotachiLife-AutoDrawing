@@ -298,7 +298,6 @@ function limitPixelMapColors(pixelMap: PixelMap, colorCount: number): PixelMap {
     }),
   );
 }
-}
 
 export async function pixelizeImage(
   imageSource: ImageSource,
