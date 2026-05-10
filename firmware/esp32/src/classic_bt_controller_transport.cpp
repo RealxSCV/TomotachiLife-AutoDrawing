@@ -36,9 +36,7 @@ constexpr uint16_t kHidCongestionRetryBudgetMs = 300;
 constexpr uint16_t kIdleDisconnectedReportIntervalMs = 100;
 constexpr uint16_t kIdlePrePairingReportIntervalMs = 30;
 constexpr uint16_t kIdleCongestedReportIntervalMs = 45;
-// Increased from 15ms to 100ms for Switch Lite to reduce LMP collision frequency.
-// Switch Lite has stricter timing requirements for sniff mode transitions.
-constexpr uint16_t kIdleConnectedReportIntervalMs = 100;
+constexpr uint16_t kIdleConnectedReportIntervalMs = 15;
 
 uint8_t kHidDescriptor[] = {
     0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x01, 0xff, 0x85, 0x21, 0x09,
@@ -1294,12 +1292,7 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
         std::memcpy(lastPeerAddress_, param->open.bd_addr, sizeof(lastPeerAddress_));
         hasPeerAddress_ = true;
         esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
-        // QoS settings not available in ESP-IDF 4.4.7
-        // Start send task immediately to keep link active and prevent Sniff mode
         ensureSendTask();
-        // Send an initial report to establish the connection. The Switch drives the subcmd handshake
-        // (0x02 device info, 0x08, SPI reads, 0x30 player lights). This initial report helps
-        // keep the link active during the pairing process.
         sendCurrentInputReport(false);
       }
       Serial.printf(
@@ -1308,7 +1301,7 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
           param->open.conn_status,
           connected_ ? formatBluetoothAddress(lastPeerAddress_).c_str() : "unknown");
       break;
-    case ESP_HIDD_CLOSE_EVT: {
+    case ESP_HIDD_CLOSE_EVT:
       lastHidCloseStatus_ = param->close.status;
       lastHidCloseConnStatus_ = param->close.conn_status;
       enterReconnectableState("hid-close");
@@ -1317,7 +1310,6 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
           param->close.status,
           param->close.conn_status);
       break;
-    }
     case ESP_HIDD_SEND_REPORT_EVT:
       if (param->send_report.status != ESP_HIDD_SUCCESS) {
         sendReportFailureCount_ += 1;
