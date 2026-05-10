@@ -2,6 +2,11 @@ import {
   deriveControllerStatus,
   shouldReuseExistingControllerConnection,
 } from "./controllerStatus.js";
+import {
+  COLOR_COUNT_OPTIONS_BY_MODE,
+  rememberStudioColorCount,
+  syncStudioColorCountState,
+} from "./studioColorCountState.js";
 
 const state = {
   activePage: "studio",
@@ -79,6 +84,10 @@ const state = {
     colorMode: "mono",
     colorCount: 32,
     enableDenoise: false,
+    colorCountByMode: {
+      palette: 32,
+      official: 32,
+    },
     removeBackground: false,
     usedColorIndexes: [],
     generatedPalette: [],
@@ -366,12 +375,6 @@ const studioTemplateOverlayCache = new Map();
 const CONTROLLER_STATUS_POLL_INTERVAL_MS = 1_000;
 const CONTROLLER_STATUS_POLL_WINDOW_MS = 45_000;
 
-const COLOR_COUNT_OPTIONS_BY_MODE = {
-  mono: [2],
-  palette: [8, 9, 16, 18, 24, 32, 64, 84, 128],
-  official: [8, 16, 32, 64, 84],
-};
-
 const STUDIO_IMAGE_SCALE_LIMITS = {
   min: 25,
   max: 200,
@@ -532,6 +535,11 @@ els.colorModeSelect.addEventListener("change", () => {
 
 els.colorCountSelect.addEventListener("change", () => {
   state.studio.colorCount = Number(els.colorCountSelect.value || state.studio.colorCount);
+  state.studio.colorCountByMode = rememberStudioColorCount(
+    state.studio.colorCountByMode,
+    state.studio.colorMode,
+    state.studio.colorCount,
+  );
   syncStudioUi();
   scheduleStudioPreviewRefresh();
 });
@@ -1029,6 +1037,11 @@ function applyGeneratedStudioPayload(payload) {
       ? payload.profile.colorMode
       : "mono";
   state.studio.colorCount = payload.profile.colorCount ?? state.studio.colorCount;
+  state.studio.colorCountByMode = rememberStudioColorCount(
+    state.studio.colorCountByMode,
+    state.studio.colorMode,
+    state.studio.colorCount,
+  );
   state.studio.removeBackground = payload.profile.removeBackground === true;
   state.studio.enableDenoise = payload.profile.enableDenoise === true;
   els.denoiseCheckbox.checked = state.studio.enableDenoise;
@@ -2861,18 +2874,21 @@ function renderOfficialPalettePreview() {
 
 function syncStudioColorCountOptions() {
   const nextOptions = COLOR_COUNT_OPTIONS_BY_MODE[state.studio.colorMode] ?? [32];
-  const currentValue = Number(state.studio.colorCount);
-  const fallbackValue = nextOptions.includes(32) ? 32 : nextOptions[0];
-  const normalizedValue = nextOptions.includes(currentValue) ? currentValue : fallbackValue;
+  const syncedState = syncStudioColorCountState({
+    colorMode: state.studio.colorMode,
+    colorCount: state.studio.colorCount,
+    colorCountByMode: state.studio.colorCountByMode,
+  });
 
-  state.studio.colorCount = normalizedValue;
+  state.studio.colorCount = syncedState.colorCount;
+  state.studio.colorCountByMode = syncedState.colorCountByMode;
   els.colorCountSelect.innerHTML = "";
 
   nextOptions.forEach((value) => {
     const option = document.createElement("option");
     option.value = String(value);
     option.textContent = state.studio.colorMode === "mono" ? "黑 / 白" : `${value} 色`;
-    option.selected = value === normalizedValue;
+    option.selected = value === state.studio.colorCount;
     els.colorCountSelect.appendChild(option);
   });
 }
