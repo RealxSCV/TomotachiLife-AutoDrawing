@@ -14,6 +14,9 @@ interface FirmwareManifest {
   }>;
   metadata?: {
     boardId?: string;
+    switchModelId?: string;
+    switchModelLabel?: string;
+    switchModelDescription?: string;
     desktopReleaseUrl?: string;
     label?: string;
     sha256?: Array<{
@@ -44,6 +47,34 @@ interface FlashDetectionCardState {
   buttonLabel: string;
   buttonDisabled: boolean;
 }
+
+type SwitchModelId = "switch" | "switch_lite";
+
+interface SwitchModelDefinition {
+  id: SwitchModelId;
+  label: string;
+  description: string;
+  manifestPath: string;
+}
+
+const SWITCH_MODELS: SwitchModelDefinition[] = [
+  {
+    id: "switch",
+    label: "Switch / OLED / V2",
+    description: "标准 Switch 固件行为。",
+    manifestPath: "./firmware/manifest.json",
+  },
+  {
+    id: "switch_lite",
+    label: "Switch Lite",
+    description:
+      "Switch Lite 对蓝牙 HID 时序更敏感；会切换到启用 SWITCH_LITE 的专用构建（禁用 BT modem sleep、固定发送节奏并延长拥塞重试）以提升配对与按键稳定性。",
+    manifestPath: "./firmware/manifest.switch_lite.json",
+  },
+];
+
+const DEFAULT_SWITCH_MODEL_ID: SwitchModelId = "switch";
+const DEFAULT_SWITCH_MODEL = SWITCH_MODELS[0] as SwitchModelDefinition;
 
 const FLASH_DETECTION_BAUD_RATE = 115200;
 const FLASH_DETECTION_BUTTON_LABEL = "检测当前开发板";
@@ -79,7 +110,10 @@ const els = {
   desktopStepLabel: document.getElementById("desktop-step-label") as HTMLElement,
   desktopFlowLabel: document.getElementById("desktop-flow-label") as HTMLElement,
   firmwareVersion: document.getElementById("firmware-version") as HTMLElement,
+  firmwareSwitchModel: document.getElementById("firmware-switch-model") as HTMLSelectElement,
+  firmwareSwitchModelDescription: document.getElementById("firmware-switch-model-description") as HTMLElement,
   firmwareBoardLabel: document.getElementById("firmware-board-label") as HTMLElement,
+  firmwareManifestPath: document.getElementById("firmware-manifest-path") as HTMLElement,
   firmwarePartsList: document.getElementById("firmware-parts-list") as HTMLUListElement,
   firmwareShaList: document.getElementById("firmware-sha-list") as HTMLUListElement,
   firmwareInstallButton: document.getElementById("firmware-install-button") as InstallButtonElement,
@@ -87,6 +121,29 @@ const els = {
 
 const fallbackDesktopReleaseUrl = els.desktopDownloadLink.href;
 let hasFlashDetectionResult = false;
+let selectedSwitchModelId: SwitchModelId = DEFAULT_SWITCH_MODEL_ID;
+
+function findSwitchModel(modelId: string): SwitchModelDefinition {
+  return SWITCH_MODELS.find((model) => model.id === modelId) ?? DEFAULT_SWITCH_MODEL;
+}
+
+function getSelectedSwitchModel(): SwitchModelDefinition {
+  return findSwitchModel(selectedSwitchModelId);
+}
+
+function renderSwitchModelPicker(): void {
+  els.firmwareSwitchModel.replaceChildren();
+
+  for (const model of SWITCH_MODELS) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.label;
+    els.firmwareSwitchModel.append(option);
+  }
+
+  els.firmwareSwitchModel.value = selectedSwitchModelId;
+  els.firmwareSwitchModelDescription.textContent = getSelectedSwitchModel().description;
+}
 
 function setCardTone(card: HTMLElement, tone: "idle" | "success" | "warning" | "error"): void {
   card.classList.remove("status-idle", "status-success", "status-warning", "status-error");
@@ -336,9 +393,12 @@ function renderDesktopRelease(version: string, desktopReleaseUrl: string): void 
   els.desktopFlowLabel.textContent = desktopLabel;
 }
 
-function renderManifest(manifest: FirmwareManifest): void {
+function renderManifest(manifest: FirmwareManifest, switchModel: SwitchModelDefinition): void {
   els.firmwareVersion.textContent = manifest.version;
   els.firmwareBoardLabel.textContent = manifest.metadata?.label ?? "ESP32-WROOM-32 / ESP-32S";
+  els.firmwareManifestPath.textContent = switchModel.manifestPath;
+  els.firmwareSwitchModelDescription.textContent =
+    manifest.metadata?.switchModelDescription ?? switchModel.description;
   els.firmwarePartsList.innerHTML = "";
   els.firmwareShaList.innerHTML = "";
 
@@ -356,24 +416,28 @@ function renderManifest(manifest: FirmwareManifest): void {
 
   renderDesktopRelease(manifest.version, manifest.metadata?.desktopReleaseUrl ?? fallbackDesktopReleaseUrl);
   renderBrowserSupport(manifest.version);
-  els.firmwareInstallButton.manifest = "./firmware/manifest.json";
+  els.firmwareInstallButton.manifest = switchModel.manifestPath;
   els.firmwareInstallButton.showLog = true;
   els.firmwareInstallButton.eraseFirst = false;
 }
 
 async function loadManifest(): Promise<void> {
+  const switchModel = getSelectedSwitchModel();
+
   try {
-    const response = await fetch("./firmware/manifest.json");
+    const response = await fetch(switchModel.manifestPath);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
 
     const manifest = (await response.json()) as FirmwareManifest;
-    renderManifest(manifest);
+    renderManifest(manifest, switchModel);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    els.firmwareVersion.textContent = message;
+    els.firmwareVersion.textContent = `${message} (${switchModel.manifestPath})`;
     els.firmwareBoardLabel.textContent = "-";
+    els.firmwareManifestPath.textContent = switchModel.manifestPath;
+    els.firmwareSwitchModelDescription.textContent = switchModel.description;
     els.firmwarePartsList.innerHTML = "";
     els.firmwareShaList.innerHTML = "";
   }
@@ -382,6 +446,14 @@ async function loadManifest(): Promise<void> {
 async function bootstrap(): Promise<void> {
   renderBrowserSupport();
   renderFlashDetectionIntro();
+  renderSwitchModelPicker();
+
+  els.firmwareSwitchModel.addEventListener("change", () => {
+    selectedSwitchModelId = findSwitchModel(els.firmwareSwitchModel.value).id;
+    els.firmwareSwitchModelDescription.textContent = getSelectedSwitchModel().description;
+    void loadManifest();
+  });
+
   els.flashDetectButton.addEventListener("click", () => {
     void handleFlashDetection();
   });

@@ -10,15 +10,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const siteRoot = path.resolve(__dirname, "..");
-export const firmwareBuildRoot = path.join(
-  repoRoot,
-  "firmware",
-  "esp32",
-  ".pio",
-  "build",
-  "esp32dev_wireless",
-);
-export const flasherArgsPath = path.join(firmwareBuildRoot, "flasher_args.json");
+
+const FIRMWARE_VARIANTS = {
+  switch: {
+    switchModelId: "switch",
+    switchModelLabel: "Switch / OLED / V2",
+    switchModelDescription: "标准 Switch 固件行为。",
+    environmentId: "esp32dev_wireless",
+    boardId: "esp32dev_wireless",
+    boardLabel: "ESP32-WROOM-32 / ESP-32S",
+    manifestFileName: "manifest.json",
+  },
+  switch_lite: {
+    switchModelId: "switch_lite",
+    switchModelLabel: "Switch Lite",
+    switchModelDescription:
+      "Switch Lite 对蓝牙 HID 时序更敏感；此模式会切换到启用 SWITCH_LITE 的专用构建（禁用 BT modem sleep、固定发送节奏并延长拥塞重试）以提升配对与按键稳定性。",
+    environmentId: "esp32dev_wireless_switch_lite",
+    boardId: "esp32dev_wireless_switch_lite",
+    boardLabel: "ESP32-WROOM-32 / ESP-32S（Switch Lite 模式）",
+    manifestFileName: "manifest.switch_lite.json",
+  },
+};
 
 const legacyPublishedFileNamesBySource = new Map([
   ["bootloader/bootloader.bin", "bootloader.bin"],
@@ -39,6 +52,27 @@ function parseFlashOffset(offset) {
   }
 
   return parsed;
+}
+
+export function listFirmwareVariants() {
+  return Object.values(FIRMWARE_VARIANTS);
+}
+
+export function getFirmwareVariant(switchModelId = "switch") {
+  const variant = FIRMWARE_VARIANTS[switchModelId];
+  if (!variant) {
+    throw new Error(`Unsupported switch model for firmware site: ${switchModelId}`);
+  }
+
+  return variant;
+}
+
+export function getFirmwareBuildRoot(environmentId) {
+  return path.join(repoRoot, "firmware", "esp32", ".pio", "build", environmentId);
+}
+
+export function getFlasherArgsPath(environmentId) {
+  return path.join(getFirmwareBuildRoot(environmentId), "flasher_args.json");
 }
 
 export function normalizePublishedFileName(sourceRelativePath) {
@@ -71,7 +105,7 @@ export function buildFirmwareFlashPlanFromArgs(flasherArgs) {
     .sort((left, right) => left.offset - right.offset);
 }
 
-function firmwareSourcePathCandidates(sourceRelativePath) {
+function firmwareSourcePathCandidates(firmwareBuildRoot, sourceRelativePath) {
   const candidates = [
     path.join(firmwareBuildRoot, sourceRelativePath),
     path.join(firmwareBuildRoot, path.basename(sourceRelativePath)),
@@ -86,7 +120,15 @@ function firmwareSourcePathCandidates(sourceRelativePath) {
 }
 
 export function resolveFirmwareSourcePath(sourceRelativePath) {
-  for (const candidate of firmwareSourcePathCandidates(sourceRelativePath)) {
+  const defaultVariant = getFirmwareVariant("switch");
+  return resolveFirmwareSourcePathForBuildRoot(
+    getFirmwareBuildRoot(defaultVariant.environmentId),
+    sourceRelativePath,
+  );
+}
+
+export function resolveFirmwareSourcePathForBuildRoot(firmwareBuildRoot, sourceRelativePath) {
+  for (const candidate of firmwareSourcePathCandidates(firmwareBuildRoot, sourceRelativePath)) {
     if (existsSync(candidate)) {
       return candidate;
     }
@@ -95,12 +137,16 @@ export function resolveFirmwareSourcePath(sourceRelativePath) {
   throw new Error(`Missing required firmware file for flash part: ${sourceRelativePath}`);
 }
 
-export async function readFirmwareFlashPlan() {
+export async function readFirmwareFlashPlan(switchModelId = "switch") {
+  const variant = getFirmwareVariant(switchModelId);
+  const firmwareBuildRoot = getFirmwareBuildRoot(variant.environmentId);
+  const flasherArgsPath = getFlasherArgsPath(variant.environmentId);
   const flasherArgs = JSON.parse(await readFile(flasherArgsPath, "utf8"));
+
   return buildFirmwareFlashPlanFromArgs(flasherArgs).map((part) => ({
     ...part,
-    manifestPath: `esp32dev_wireless/${part.publishFileName}`,
-    sourcePath: resolveFirmwareSourcePath(part.sourceRelativePath),
+    manifestPath: `${variant.environmentId}/${part.publishFileName}`,
+    sourcePath: resolveFirmwareSourcePathForBuildRoot(firmwareBuildRoot, part.sourceRelativePath),
   }));
 }
 
@@ -109,18 +155,19 @@ export async function sha256File(filePath) {
   return createHash("sha256").update(content).digest("hex");
 }
 
-export async function assertFirmwareFiles() {
-  for (const part of await readFirmwareFlashPlan()) {
+export async function assertFirmwareFiles(switchModelId = "switch") {
+  for (const part of await readFirmwareFlashPlan(switchModelId)) {
     if (!existsSync(part.sourcePath)) {
       throw new Error(`Missing required firmware file: ${part.sourcePath}`);
     }
   }
 }
 
-export async function createFirmwareManifest() {
-  await assertFirmwareFiles();
+export async function createFirmwareManifest(switchModelId = "switch") {
+  const variant = getFirmwareVariant(switchModelId);
+  await assertFirmwareFiles(switchModelId);
   const { version, desktopReleaseUrl } = await readReleaseInfo();
-  const firmwareParts = await readFirmwareFlashPlan();
+  const firmwareParts = await readFirmwareFlashPlan(switchModelId);
   const sha256 = [];
 
   for (const part of firmwareParts) {
@@ -144,8 +191,11 @@ export async function createFirmwareManifest() {
       },
     ],
     metadata: {
-      boardId: "esp32dev_wireless",
-      label: "ESP32-WROOM-32 / ESP-32S",
+      boardId: variant.boardId,
+      label: variant.boardLabel,
+      switchModelId: variant.switchModelId,
+      switchModelLabel: variant.switchModelLabel,
+      switchModelDescription: variant.switchModelDescription,
       desktopReleaseUrl,
       generatedAt: new Date().toISOString(),
       sha256,
