@@ -31,6 +31,38 @@ This document summarizes the code changes required to ensure stable Bluetooth HI
 
 This inheritance setup minimizes duplication and config drift while keeping the model-specific behavior isolated to one macro flag.
 
+## UI Integration: How To Call Build Modes
+
+Use the selected console model to choose the build target:
+
+- `switch` -> PlatformIO env: `esp32dev_wireless`
+- `switch_lite` -> PlatformIO env: `esp32dev_wireless_switch_lite`
+
+Recommended UI call flow (PlatformIO):
+
+1. Build
+	- Standard Switch: `pio run -e esp32dev_wireless`
+	- Switch Lite: `pio run -e esp32dev_wireless_switch_lite`
+2. Flash
+	- Standard Switch: `pio run -e esp32dev_wireless -t upload`
+	- Switch Lite: `pio run -e esp32dev_wireless_switch_lite -t upload`
+3. Monitor (optional)
+	- `pio device monitor -b 115200`
+
+If your UI needs one command per mode, use:
+
+- Standard Switch build+flash: `pio run -e esp32dev_wireless -t upload`
+- Switch Lite build+flash: `pio run -e esp32dev_wireless_switch_lite -t upload`
+
+CMake equivalent (if not using PlatformIO):
+
+- Standard: configure without `SWITCH_LITE` (default `OFF`)
+- Switch Lite: configure with `-DSWITCH_LITE=ON`
+
+Example CMake configure call for Switch Lite:
+
+- `cmake -S . -B build-switch-lite -DSWITCH_LITE=ON`
+
 ## Compatibility
 
 - **Switch Lite**: Stable pairing and operation, no repeated notifications, no LMP collision disconnects.
