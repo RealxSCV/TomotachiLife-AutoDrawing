@@ -969,12 +969,6 @@ bool ClassicBtControllerTransport::repeatCurrentInputReport(
   bool loggedCongestionRetry = false;
 
   while (true) {
-    // Fire-and-forget (waitForSendEvent=false): esp_bt_hid_device_send_report
-    // returns ESP_OK when L2CAP accepts the packet into xmit_hold_q even when
-    // the channel is congested (L2CAP_DW_CONGESTED). The packet IS queued and
-    // WILL be delivered as the ACL link drains. Waiting for the EVT and
-    // treating reason=8 as failure causes spurious retries that fill the queue
-    // further and block the main loop for hundreds of ms.
     if (!sendCurrentInputReport(logFailure, false)) {
       if (shouldRetryAfterTransientSendFailure()) {
         if (congestionStartedAt == 0) {
@@ -1110,7 +1104,6 @@ void ClassicBtControllerTransport::processIncomingReport(uint8_t reportId, uint1
       data[11]);
 
   if (data[9] == 2) {
-    // Subcmd 0x02: Request Device Info.
     sendSubcommandReply(0x21, kReply02, sizeof(kReply02), "reply02");
     return;
   }
@@ -1127,7 +1120,6 @@ void ClassicBtControllerTransport::processIncomingReport(uint8_t reportId, uint1
     return;
   }
   if (data[9] == 3) {
-    // Explicitly acknowledge the transition to Report Mode 0x30
     sendSubcommandReply(0x21, kReply03, sizeof(kReply03), "reply03");
     markControllerPaired(); // Ensure the send task knows we are live
     return;
