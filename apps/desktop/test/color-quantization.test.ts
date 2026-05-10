@@ -47,6 +47,7 @@ function makeProfile(overrides: Partial<DrawingProfile> = {}): DrawingProfile {
     startColorIndex: 0,
     centerToTopLeftDx: 0,
     centerToTopLeftDy: 0,
+    enableDenoise: false,
     ...overrides,
   };
 }
