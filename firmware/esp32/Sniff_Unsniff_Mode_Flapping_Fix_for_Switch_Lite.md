@@ -2,9 +2,11 @@
 # Switch Lite Bluetooth HID Connection Stability: Minimal Fixes
 
 ## Summary
-This document summarizes the minimal code changes required to ensure stable Bluetooth HID pairing and operation with Nintendo Switch Lite, focusing on connection stability and avoiding unnecessary modifications.
+This document summarizes the code changes required to ensure stable Bluetooth HID pairing and operation with Nintendo Switch Lite, while keeping one codebase that can build both standard Switch and Switch Lite firmware variants.
 
 ## Key Fixes
+
+- **Compile-time model selection (`SWITCH_LITE`)**: Switch Lite-specific behavior is now behind compile-time guards so the same firmware source supports both models. Standard builds keep baseline behavior; Switch Lite builds enable the stability workarounds.
 
 - **Disable BT modem sleep at runtime**: `esp_bt_sleep_disable()` is called in `initializeClassicBluetooth()` to prevent the ESP32 from entering sniff mode, which causes LMP collisions and pairing instability on Switch Lite.
 
@@ -20,6 +22,15 @@ This document summarizes the minimal code changes required to ensure stable Blue
 
 - **Suppress routine congestion warning spam**: In `ESP_HIDD_SEND_REPORT_EVT`, expected congestion outcomes (reason `8` and `0`) are filtered from warning logs to reduce noise while preserving non-routine failure visibility.
 
+## Build Configuration
+
+- **PlatformIO shared base env**: `esp32dev_wireless_base` defines common board/framework settings and common build flags.
+- **PlatformIO standard build**: Environment `esp32dev_wireless` extends the base env and builds without `SWITCH_LITE`.
+- **PlatformIO Switch Lite build**: Environment `esp32dev_wireless_switch_lite` extends the base env and adds `-DSWITCH_LITE=1`.
+- **CMake support**: Top-level option `SWITCH_LITE` is available and forwarded to source compile definitions.
+
+This inheritance setup minimizes duplication and config drift while keeping the model-specific behavior isolated to one macro flag.
+
 ## Compatibility
 
 - **Switch Lite**: Stable pairing and operation, no repeated notifications, no LMP collision disconnects.
@@ -27,9 +38,11 @@ This document summarizes the minimal code changes required to ensure stable Blue
 
 ## Technical Rationale
 
-Switch Lite is more sensitive to timing and power management than the regular Switch. Disabling modem sleep and using a fixed, conservative send interval prevents sniff mode transitions and LMP collisions, which are the root cause of pairing instability. The initial delay ensures encryption is established before input reports are sent. The congestion retry/draintime changes improve reliability when send callbacks are delayed or reordered during transient channel pressure.
+Switch Lite is more sensitive to timing and power management than the regular Switch. Disabling modem sleep and using a fixed, conservative send interval prevents sniff mode transitions and LMP collisions, which are the root cause of pairing instability. The initial delay ensures encryption is established before input reports are sent. The congestion retry/draintime changes improve reliability when send callbacks are delayed or reordered during transient channel pressure. Using compile-time guards keeps standard firmware behavior unchanged while enabling these mitigations only for Switch Lite builds.
 
 ## Files Modified
 
-- **Issue-specific logic**: `classic_bt_controller_transport.cpp` contains the Switch Lite stability fixes described above.
-- **Additional branch changes vs main**: `main.cpp`, `.gitignore`, and `.vscode/extensions.json` also differ from main but are not core to the Switch Lite BT stability fix itself.
+- **Issue-specific logic**: `src/classic_bt_controller_transport.cpp` contains the Switch Lite stability fixes and `SWITCH_LITE` guards.
+- **Build selection**: `platformio.ini` defines standard and Switch Lite environments.
+- **CMake build path**: `CMakeLists.txt` and `src/CMakeLists.txt` add `SWITCH_LITE` option/definition support.
+- **Additional branch changes vs main**: `src/main.cpp`, `.gitignore`, and `.vscode/extensions.json` also differ from main but are not core to the Switch Lite BT stability fix itself.

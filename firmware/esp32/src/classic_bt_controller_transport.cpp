@@ -30,9 +30,22 @@ constexpr uint8_t kStickMax = 255;
 // draw on a transient queue backup.
 constexpr uint8_t kHidErrCongested = 8;
 constexpr uint16_t kHidCongestionRetryDelayMs = HID_REPEAT_INTERVAL_MS;
-// 300 ms gives the L2CAP TX queue time to drain before giving up on a button press.
-// Extended from 120ms (HID_REPEAT_INTERVAL_MS * 4) for Switch Lite compatibility.
+#if !defined(SWITCH_LITE)
+constexpr uint16_t kHidCongestionRetryBudgetMs = HID_REPEAT_INTERVAL_MS * 4;
+constexpr uint16_t kSendTaskStartupDelayMs = 0;
+constexpr bool kUseFixedSendInterval = false;
+constexpr bool kDrainInFlightReportsBeforeExplicitInput = false;
+constexpr bool kMarkPairedOnSubcommand03 = false;
+constexpr bool kSuppressRoutineCongestionWarnings = false;
+#else
+// Switch Lite needs a wider retry window during transient L2CAP congestion.
 constexpr uint16_t kHidCongestionRetryBudgetMs = 300;
+constexpr uint16_t kSendTaskStartupDelayMs = 1000;
+constexpr bool kUseFixedSendInterval = true;
+constexpr bool kDrainInFlightReportsBeforeExplicitInput = true;
+constexpr bool kMarkPairedOnSubcommand03 = true;
+constexpr bool kSuppressRoutineCongestionWarnings = true;
+#endif
 constexpr uint16_t kIdleDisconnectedReportIntervalMs = 100;
 constexpr uint16_t kIdlePrePairingReportIntervalMs = 30;
 constexpr uint16_t kIdleCongestedReportIntervalMs = 45;
@@ -342,12 +355,10 @@ bool ClassicBtControllerTransport::initializeClassicBluetooth() {
   }
   bluedroidReady_ = true;
 
-  // Disable BT modem sleep at runtime (overrides config settings). This prevents
-  // the ESP32 from entering sniff mode, which conflicts with Switch Lite's power
-  // management and causes LMP collisions during pairing/handshake. The Switch Lite
-  // has stricter timing requirements and attempts sniff mode transitions that
-  // interfere with stable connections.
+#if defined(SWITCH_LITE)
+  // Switch Lite variant: prevent modem sleep to avoid sniff-mode flapping.
   esp_bt_sleep_disable();
+#endif
 
   initStep_ = "gap_register";
   err = esp_bt_gap_register_callback(
@@ -614,7 +625,6 @@ void ClassicBtControllerTransport::ensureSendTask() {
       0);
 }
 
-// Switch Lite branch: idleSendIntervalMs() is not used, but kept for reference.
 uint16_t ClassicBtControllerTransport::idleSendIntervalMs() const {
   if (!connected_ && !paired_) {
     return kIdleDisconnectedReportIntervalMs;
@@ -633,16 +643,18 @@ uint16_t ClassicBtControllerTransport::idleSendIntervalMs() const {
 
 void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
   auto *transport = static_cast<ClassicBtControllerTransport *>(param);
-  // Increase delay to 1000ms to let Switch Lite encryption finish
-  vTaskDelay(pdMS_TO_TICKS(1000));
+  if (kSendTaskStartupDelayMs > 0) {
+    vTaskDelay(pdMS_TO_TICKS(kSendTaskStartupDelayMs));
+  }
   while (true) {
     if (!transport->explicitInputActive_) {
       transport->sendCurrentInputReport(false);
     }
-    // Main branch logic (dynamic interval, commented for reference)
-    //vTaskDelay(pdMS_TO_TICKS(transport->idleSendIntervalMs()));
-    // Switch Lite compatibility: always use 100ms interval, no dynamic timing
-    vTaskDelay(pdMS_TO_TICKS(100));
+    if (kUseFixedSendInterval) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(transport->idleSendIntervalMs()));
+    }
   }
 }
 
@@ -938,7 +950,9 @@ bool ClassicBtControllerTransport::beginExplicitInput() {
   // causing waitForInputReportAccepted to exit prematurely using the IDLE
   // send's status — making all retries in repeatCurrentInputReport look like
   // they fail even though L2CAP may have cleared congestion.
-  if (paired_ && inputReportSendEventCount_ < inputReportSubmitCount_) {
+  if (kDrainInFlightReportsBeforeExplicitInput &&
+      paired_ &&
+      inputReportSendEventCount_ < inputReportSubmitCount_) {
     const uint32_t drainStart = millis();
     while (inputReportSendEventCount_ < inputReportSubmitCount_ &&
            (millis() - drainStart) < 100) {
@@ -1121,7 +1135,9 @@ void ClassicBtControllerTransport::processIncomingReport(uint8_t reportId, uint1
   }
   if (data[9] == 3) {
     sendSubcommandReply(0x21, kReply03, sizeof(kReply03), "reply03");
-    markControllerPaired(); // Ensure the send task knows we are live
+    if (kMarkPairedOnSubcommand03) {
+      markControllerPaired();
+    }
     return;
   }
   if (data[9] == 4) {
@@ -1310,14 +1326,18 @@ void ClassicBtControllerTransport::handleHidEvent(int event, void *rawParam) {
                          param->send_report.reason == kHidErrCongested;
       readyForReports_ = isHidReportChannelOpen();
       if (param->send_report.status != ESP_HIDD_SUCCESS) {
-        // Suppress congestion noise (reason=8 = L2CAP channel full / reason=0).
-        // Idle sends are fire-and-forget and will flood when the link is in sniff.
-        // Explicit button-press failures are reported by waitForInputReportAccepted
-        // via "WARN bt send_report rejected", so we don't double-log here.
-        const bool isRoutineCongestion =
-            param->send_report.reason == kHidErrCongested ||
-            param->send_report.reason == 0;
-        if (!isRoutineCongestion) {
+        if (kSuppressRoutineCongestionWarnings) {
+          const bool isRoutineCongestion =
+              param->send_report.reason == kHidErrCongested ||
+              param->send_report.reason == 0;
+          if (!isRoutineCongestion) {
+            Serial.printf(
+                "WARN bt hid event=send-report status=%d reason=%u report=%u\n",
+                param->send_report.status,
+                param->send_report.reason,
+                param->send_report.report_id);
+          }
+        } else {
           Serial.printf(
               "WARN bt hid event=send-report status=%d reason=%u report=%u\n",
               param->send_report.status,
