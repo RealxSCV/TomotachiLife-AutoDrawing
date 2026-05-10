@@ -344,10 +344,11 @@ bool ClassicBtControllerTransport::initializeClassicBluetooth() {
   }
   bluedroidReady_ = true;
 
-  // Disable BT modem sleep (RF clock stays on). This tightens sniff LMP
-  // timing and reduces the collision window where two simultaneous sniff
-  // requests (Switch PM + BTA_DM_PM) leave the ACL TX credit counter stalled.
-  // Disabled for Switch Lite compatibility to prevent LMP collision issues.
+  // Disable BT modem sleep at runtime (overrides config settings). This prevents
+  // the ESP32 from entering sniff mode, which conflicts with Switch Lite's power
+  // management and causes LMP collisions during pairing/handshake. The Switch Lite
+  // has stricter timing requirements and attempts sniff mode transitions that
+  // interfere with stable connections.
   esp_bt_sleep_disable();
 
   initStep_ = "gap_register";
@@ -615,21 +616,21 @@ void ClassicBtControllerTransport::ensureSendTask() {
       0);
 }
 
+// Switch Lite branch: idleSendIntervalMs() is not used, but kept for reference.
 uint16_t ClassicBtControllerTransport::idleSendIntervalMs() const {
-// If we are connected to the Switch but the handshake (pairing) isn't 
-  // finished, we MUST send reports every 11ms. 
-  // This "noise" stops the Switch Lite from trying to enter Sniff Mode.
-  if (connected_ && !paired_) {
-    return kIdleConnectedReportIntervalMs; 
-  }
-
-  // If not connected at all, talk slowly to save local CPU
-  if (!connected_) {
+  if (!connected_ && !paired_) {
     return kIdleDisconnectedReportIntervalMs;
   }
 
-  // Standard behavior for when things are going well
-  return kIdleConnectedReportIntervalMs; // 100ms for Switch Lite compatibility
+  if (reportCongested_ || consecutiveSendReportFailures_ >= 3) {
+    return kIdleCongestedReportIntervalMs;
+  }
+
+  if (!paired_ || !authComplete_) {
+    return kIdlePrePairingReportIntervalMs;
+  }
+
+  return kIdleConnectedReportIntervalMs;
 }
 
 void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
@@ -637,9 +638,13 @@ void ClassicBtControllerTransport::sendTaskTrampoline(void *param) {
   // Increase delay to 1000ms to let Switch Lite encryption finish
   vTaskDelay(pdMS_TO_TICKS(1000));
   while (true) {
-    transport->sendCurrentInputReport(false);
-    // Force 100ms if connected to prevent the buggy Sniff Mode
-    vTaskDelay(pdMS_TO_TICKS(transport->connected_ ? 100 : 100));
+    if (!transport->explicitInputActive_) {
+      transport->sendCurrentInputReport(false);
+    }
+    // Main branch logic (dynamic interval, commented for reference)
+    //vTaskDelay(pdMS_TO_TICKS(transport->idleSendIntervalMs()));
+    // Switch Lite compatibility: always use 100ms interval, no dynamic timing
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
