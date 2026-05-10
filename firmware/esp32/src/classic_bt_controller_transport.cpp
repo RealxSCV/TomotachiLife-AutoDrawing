@@ -34,7 +34,6 @@ constexpr uint16_t kHidCongestionRetryDelayMs = HID_REPEAT_INTERVAL_MS;
 constexpr uint16_t kHidCongestionRetryBudgetMs = HID_REPEAT_INTERVAL_MS * 4;
 constexpr uint16_t kSendTaskStartupDelayMs = 0;
 constexpr bool kUseFixedSendInterval = false;
-constexpr bool kDrainInFlightReportsBeforeExplicitInput = false;
 constexpr bool kMarkPairedOnSubcommand03 = false;
 constexpr bool kSuppressRoutineCongestionWarnings = false;
 #else
@@ -42,7 +41,6 @@ constexpr bool kSuppressRoutineCongestionWarnings = false;
 constexpr uint16_t kHidCongestionRetryBudgetMs = 300;
 constexpr uint16_t kSendTaskStartupDelayMs = 1000;
 constexpr bool kUseFixedSendInterval = true;
-constexpr bool kDrainInFlightReportsBeforeExplicitInput = true;
 constexpr bool kMarkPairedOnSubcommand03 = true;
 constexpr bool kSuppressRoutineCongestionWarnings = true;
 #endif
@@ -942,28 +940,26 @@ bool ClassicBtControllerTransport::beginExplicitInput() {
 
   xSemaphoreTakeRecursive(inputReportSendMutex_, portMAX_DELAY);
 
-  // Wait for in-flight idle-send BTA callbacks to drain BEFORE resetting the
-  // submit/event counters. The idle task may have already posted send_report
-  // API calls (mutex given, BTA message queued) whose SEND_REPORT_EVT has not
-  // fired yet. If we reset immediately, those pending EVTs will later advance
-  // inputReportSendEventCount_ into the range we reserved for explicit sends,
-  // causing waitForInputReportAccepted to exit prematurely using the IDLE
-  // send's status — making all retries in repeatCurrentInputReport look like
-  // they fail even though L2CAP may have cleared congestion.
-  if (kDrainInFlightReportsBeforeExplicitInput &&
-      paired_ &&
-      inputReportSendEventCount_ < inputReportSubmitCount_) {
+  // Before explicit input, align submit/event counters to avoid attributing
+  // earlier idle-send callbacks to the new explicit send window.
+  if (paired_ && inputReportSendEventCount_ < inputReportSubmitCount_) {
+    uint32_t drainElapsedMs = 0;
+#if defined(SWITCH_LITE)
+    // Switch Lite can report SEND_REPORT_EVT later than expected under transient
+    // congestion, so briefly wait for in-flight idle events before re-aligning.
     const uint32_t drainStart = millis();
     while (inputReportSendEventCount_ < inputReportSubmitCount_ &&
            (millis() - drainStart) < 100) {
       delay(1);
     }
+    drainElapsedMs = millis() - drainStart;
+#endif
     Serial.printf(
-        "INFO bt send_report drain submitted=%lu completed=%lu elapsed=%lu\n",
-        static_cast<unsigned long>(inputReportSubmitCount_),
-        static_cast<unsigned long>(inputReportSendEventCount_),
-        static_cast<unsigned long>(millis() - drainStart));
-    // Align to actual event count regardless of timeout.
+      "INFO bt send_report drain submitted=%lu completed=%lu elapsed=%lu\n",
+      static_cast<unsigned long>(inputReportSubmitCount_),
+      static_cast<unsigned long>(inputReportSendEventCount_),
+      static_cast<unsigned long>(drainElapsedMs));
+    // Align to actual event count after drain (or immediate skip on standard build).
     inputReportSubmitCount_ = inputReportSendEventCount_;
   }
   return true;
