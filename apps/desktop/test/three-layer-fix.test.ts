@@ -7,8 +7,10 @@ import sharp from "sharp";
 import { calculateCanvasBounds, generateDrawPlan } from "../src/app/generateDrawPlan.js";
 import { createBrushGrid, gridCellBounds, gridCellToCanvasCenter } from "../src/brushGrid.js";
 import { applyDrawingMask, createDrawingMaskCoverageMap } from "../src/image/drawingMask.js";
+import { autoRemoveBackground } from "../src/image/removeBackground.js";
 import { pixelizeImage } from "../src/image/pixelize.js";
 import { renderPreviewToBuffer } from "../src/image/renderPreview.js";
+import { resizeImage } from "../src/image/resizeImage.js";
 import { generateScanlineCommands } from "../src/path/scanline.js";
 import { serializeCommands } from "../src/protocol/serializer.js";
 import {
@@ -45,6 +47,7 @@ function makeProfile(overrides: Partial<DrawingProfile> = {}): DrawingProfile {
     monoThreshold: 128,
     palette: ["#000000", "#ffffff"],
     brushSize: 1,
+    brushShape: "square",
     startCursor: "center",
     startTool: "pen",
     startColorIndex: 0,
@@ -158,6 +161,10 @@ function makeDrawingMask(
   };
 }
 
+function rawAlphaAt(image: RawImageData, x: number, y: number): number {
+  return image.data[(y * image.width + x) * image.channels + 3] ?? 0;
+}
+
 function getSerializedLineVectors(commands: string[]): Array<{ dx: number; dy: number }> {
   return commands.flatMap((command) => {
     const match = /^L\s+(-?\d+)\s+(-?\d+)$/u.exec(command);
@@ -257,6 +264,59 @@ test("large brush centered blocks use grid origin instead of top-left bias", asy
 
   assert.deepEqual(calculateCanvasBounds(pixelMap, profile), expected);
   assert.deepEqual(await alphaBoundsFromPreview(await renderPreviewToBuffer(pixelMap, profile, 1)), expected);
+});
+
+test("auto background removal still works when the placed image does not touch the canvas edge", async () => {
+  const profile = makeProfile({ canvasWidth: 10, canvasHeight: 10, brushSize: 1 });
+  const foreground = await solidPng(1, 1, { r: 0, g: 0, b: 0, alpha: 255 });
+  const source = await sharp({
+    create: {
+      width: 5,
+      height: 5,
+      channels: 4,
+      background: { r: 240, g: 240, b: 240, alpha: 255 },
+    },
+  })
+    .composite([{ input: foreground, left: 2, top: 2 }])
+    .png()
+    .toBuffer();
+  const pixelized = await pixelizeImage(source, profile, {
+    imageScalePercent: 50,
+    removeBackground: true,
+  });
+
+  assert.equal(pixelized.pixelMap[3]?.[3]?.alpha, 0);
+  assert.equal(pixelized.pixelMap[5]?.[5]?.alpha, 255);
+  assert.equal(
+    pixelized.pixelMap.flatMap((row) => row).filter((pixel) => pixel.alpha > 0 && pixel.colorIndex >= 0).length,
+    1,
+  );
+});
+
+test("auto background removal keeps already transparent assets intact", async () => {
+  const foreground = await solidPng(3, 3, { r: 255, g: 255, b: 255, alpha: 255 });
+  const source = await sharp({
+    create: {
+      width: 5,
+      height: 5,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([{ input: foreground, left: 1, top: 1 }])
+    .png()
+    .toBuffer();
+  const loaded = await resizeImage(source, {
+    width: 5,
+    height: 5,
+    resizeMode: "contain",
+  });
+  const cutout = autoRemoveBackground(loaded);
+
+  assert.equal(rawAlphaAt(cutout, 1, 1), 255);
+  assert.equal(rawAlphaAt(cutout, 2, 2), 255);
+  assert.equal(rawAlphaAt(cutout, 3, 3), 255);
+  assert.equal(rawAlphaAt(cutout, 0, 0), 0);
 });
 
 test("drawing mask clears pixels outside the template and bounds follow the masked shape", async () => {
@@ -365,7 +425,15 @@ test("dynamic timeouts follow CFG INPUT timing", () => {
   assert.equal(getAckTimeoutForCommand("CFG INPUT 100 100 1800", 500, timing), 500);
   assert.equal(getAckTimeoutForCommand("M 3 0", 500, timing), 1600);
   assert.equal(getAckTimeoutForCommand("L 3 0", 500, timing), 1800);
+  assert.equal(getAckTimeoutForCommand("L 6 0 3", 500, timing), 2800);
+  assert.equal(getAckTimeoutForCommand("W 3000", 500, timing), 4000);
   assert.equal(getAckTimeoutForCommand("H", 500, timing), 4700);
+});
+
+test("stride line timeouts account for discrete movement instead of long-hold jumps", () => {
+  const timing = { buttonPressMs: 65, inputDelayMs: 45, homeMs: 1800 };
+
+  assert.equal(getAckTimeoutForCommand("L -38 0 19", 500, timing), 5_510);
 });
 
 test("serial sender probes fresh ESP32 serial sessions before first sequenced command", async () => {
@@ -436,6 +504,20 @@ test("controller input report failures are not retried", async () => {
   );
 
   assert.equal(lines.some((line) => line.startsWith("WARN retry")), false);
+});
+
+test("simulated stride lines keep the endpoint but only add one draw per stride chunk", async () => {
+  const lines: string[] = [];
+  const sender = new SimulatedAckSender();
+
+  await sender.send(["L 6 0 3", "I"], {
+    ackTimeoutMs: 5_000,
+    retries: 0,
+    ackDelayMs: 0,
+    onDeviceLine: (line) => lines.push(line),
+  });
+
+  assert.match(lines.at(-1) ?? "", /INFO transport=simulated-device x=6 y=0 color=0 draws=3$/u);
 });
 
 test("congested controller send-report warnings are recognized as execution-fatal", () => {

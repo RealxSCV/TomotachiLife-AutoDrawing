@@ -15,7 +15,7 @@ class SwitchController {
   bool moveCursor(int dx, int dy);
   bool moveStick(int x, int y, uint16_t holdMs);
   bool drawStroke();
-  bool drawLine(int dx, int dy);
+  bool drawLine(int dx, int dy, uint8_t stride = 1);
   bool pressButton(ControllerButton button);
   bool holdButton(ControllerButton button, uint16_t holdMs);
   bool tapButton(ControllerButton button, uint16_t count);

@@ -2,6 +2,7 @@ import { ReadlineParser } from "@serialport/parser-readline";
 import { SerialPort } from "serialport";
 
 import { preferSerialPath } from "./listPorts.js";
+import { getLineCommandMetrics } from "../protocol/lineMetrics.js";
 import {
   createSessionId,
   formatSequencedCommand,
@@ -402,6 +403,17 @@ export function getAckTimeoutForCommand(
     return boundedTimeout(1_000 + holdMs + timing.inputDelayMs);
   }
 
+  if (trimmed.startsWith("W ")) {
+    const match = /^W\s+(\d+)$/u.exec(trimmed);
+
+    if (!match?.[1]) {
+      return baseTimeoutMs;
+    }
+
+    const waitMs = Number.parseInt(match[1], 10);
+    return boundedTimeout(1_000 + waitMs);
+  }
+
   if (trimmed === "H") {
     return Math.max(baseTimeoutMs, 1_000 + timing.homeMs * 2 + timing.inputDelayMs);
   }
@@ -427,7 +439,7 @@ export function getAckTimeoutForCommand(
   }
 
   if (trimmed.startsWith("L ")) {
-    const match = /^L\s+(-?\d+)\s+(-?\d+)$/u.exec(trimmed);
+    const match = /^L\s+(-?\d+)\s+(-?\d+)(?:\s+(\d+))?$/u.exec(trimmed);
 
     if (!match || match[1] === undefined || match[2] === undefined) {
       return baseTimeoutMs;
@@ -435,11 +447,12 @@ export function getAckTimeoutForCommand(
 
     const dx = Number.parseInt(match[1], 10);
     const dy = Number.parseInt(match[2], 10);
-    const steps = Math.abs(dx) + Math.abs(dy);
+    const stride = match[3] === undefined ? 1 : Number.parseInt(match[3], 10);
+    const metrics = getLineCommandMetrics(dx, dy, stride);
 
     return Math.max(
       baseTimeoutMs,
-      1_000 + (steps + 1) * (timing.buttonPressMs + timing.inputDelayMs),
+      1_000 + metrics.actionCount * (timing.buttonPressMs + timing.inputDelayMs),
     );
   }
 

@@ -8,6 +8,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { generateDrawPlan } from "../app/generateDrawPlan.js";
 import { buildRecoveryExecutionPlan, deriveResumeProgress } from "../app/recovery.js";
+import {
+  getUnsupportedBrushShapeMessage,
+  normalizeBrushShape,
+} from "../brushBehavior.js";
 import { applyCliOptions, type CliOptions } from "../cli/args.js";
 import { DEFAULT_ACK_TIMEOUT_MS } from "../config/defaultProfile.js";
 import { loadProfile } from "../config/loadProfile.js";
@@ -368,6 +372,60 @@ function json(
   response.end(JSON.stringify(payload));
 }
 
+function readSingleHeaderValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return typeof value === "string" ? value : null;
+}
+
+function normalizeHeaderOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function assertTrustedApiRequest(request: IncomingMessage, url: URL): void {
+  if (request.method !== "POST" || !url.pathname.startsWith("/api/")) {
+    return;
+  }
+
+  const contentType = readSingleHeaderValue(request.headers["content-type"])
+    ?.split(";")[0]
+    ?.trim()
+    .toLowerCase();
+
+  if (contentType !== "application/json") {
+    throw new HttpError(415, "API requests must use application/json.");
+  }
+
+  const fetchSite = readSingleHeaderValue(request.headers["sec-fetch-site"])?.trim().toLowerCase();
+
+  if (fetchSite === "cross-site") {
+    throw new HttpError(403, "Cross-site API requests are not allowed.");
+  }
+
+  const expectedOrigin = url.origin;
+  const originHeader = readSingleHeaderValue(request.headers.origin);
+
+  if (originHeader) {
+    if (normalizeHeaderOrigin(originHeader) !== expectedOrigin) {
+      throw new HttpError(403, "Cross-origin API requests are not allowed.");
+    }
+
+    return;
+  }
+
+  const refererHeader = readSingleHeaderValue(request.headers.referer);
+
+  if (refererHeader && normalizeHeaderOrigin(refererHeader) !== expectedOrigin) {
+    throw new HttpError(403, "Cross-origin API requests are not allowed.");
+  }
+}
+
 function getContentType(filePath: string): string {
   if (filePath.endsWith(".png")) {
     return "image/png";
@@ -448,7 +506,16 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 
   const raw = Buffer.concat(chunks).toString("utf8");
-  return raw.length > 0 ? JSON.parse(raw) : {};
+
+  if (raw.length === 0) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new HttpError(400, "Malformed JSON request body.");
+  }
 }
 
 function decodeDataUrl(dataUrl: string): Buffer {
@@ -497,6 +564,16 @@ interface LoggedError extends Error {
 interface ExecutionError extends Error {
   lines?: string[];
   session?: SerialSessionSnapshot;
+}
+
+class HttpError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
 }
 
 function createIdleFirmwareFlashState(): FirmwareFlashSnapshot {
@@ -1001,6 +1078,7 @@ function normalizeRecoveryProfileSummary(value: unknown): ExecutionStartProfileS
 
   return {
     brushSize: normalizeBrushSize(summary.brushSize, 3),
+    brushShape: normalizeBrushShape(summary.brushShape, "square"),
     colorMode:
       summary.colorMode === "official" || summary.colorMode === "palette" ? summary.colorMode : "mono",
     templateId: typeof summary.templateId === "string" ? summary.templateId : "none",
@@ -1009,6 +1087,33 @@ function normalizeRecoveryProfileSummary(value: unknown): ExecutionStartProfileS
     imageOffsetXPercent: normalizeImageOffsetPercent(summary.imageOffsetXPercent),
     imageOffsetYPercent: normalizeImageOffsetPercent(summary.imageOffsetYPercent),
   };
+}
+
+function normalizeRecoverySessionSummary(summary: RecoverySessionSummary): RecoverySessionSummary {
+  return {
+    ...summary,
+    profileSummary: normalizeRecoveryProfileSummary(summary.profileSummary),
+  };
+}
+
+function normalizeRecoverySessionRecord(record: RecoverySessionRecord): RecoverySessionRecord {
+  return {
+    ...record,
+    profileSummary: normalizeRecoveryProfileSummary(record.profileSummary),
+  };
+}
+
+function assertSupportedBrushSelection(
+  brushShape: "square" | "round",
+  brushSize: number,
+): void {
+  const normalizedBrushShape = normalizeBrushShape(brushShape, "square");
+  const normalizedBrushSize = normalizeBrushSize(brushSize, 1);
+  const message = getUnsupportedBrushShapeMessage(normalizedBrushShape, normalizedBrushSize);
+
+  if (message) {
+    throw new HttpError(400, message);
+  }
 }
 
 function isManagedExecutionActive(status: ExecutionStatus): boolean {
@@ -1026,7 +1131,9 @@ function appendManagedExecutionLine(execution: ManagedExecution, line: string): 
 function getManagedExecutionRecoverySummary(
   execution: ManagedExecution,
 ): RecoverySessionSummary | null {
-  return execution.recoverySession ? summarizeRecoverySession(execution.recoverySession) : null;
+  return execution.recoverySession
+    ? normalizeRecoverySessionSummary(summarizeRecoverySession(execution.recoverySession))
+    : null;
 }
 
 function snapshotManagedExecution(execution: ManagedExecution = managedExecution): Record<string, unknown> {
@@ -1114,6 +1221,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
     templateId?: string;
     size?: number;
     brushSize?: number;
+    brushShape?: "square" | "round";
     imageScalePercent?: number;
     imageOffsetXPercent?: number;
     imageOffsetYPercent?: number;
@@ -1164,12 +1272,14 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
   const profile = {
     ...baseProfile,
     brushSize: normalizeBrushSize(body.brushSize, baseProfile.brushSize),
+    brushShape: normalizeBrushShape(body.brushShape, baseProfile.brushShape),
     inputDelay: normalizeTimingDuration(body.inputDelay, baseProfile.inputDelay),
     buttonPressDuration: normalizeTimingDuration(
       body.buttonPressDuration,
       baseProfile.buttonPressDuration,
     ),
   };
+  assertSupportedBrushSelection(profile.brushShape, profile.brushSize);
   const drawingMask = await loadDrawingTemplateMask(template.id, profile.canvasWidth, profile.canvasHeight);
 
   const plan = await generateDrawPlan(
@@ -1191,6 +1301,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
       canvasWidth: profile.canvasWidth,
       canvasHeight: profile.canvasHeight,
       brushSize: profile.brushSize,
+      brushShape: profile.brushShape,
       templateId: template.id,
       templateLabel: template.label,
       imageScalePercent,
@@ -1718,10 +1829,16 @@ async function handleExecutionStart(
 
     const target: ExecutionTarget = body.target === "simulate" ? "simulate" : "serial";
     const portPath = target === "serial" ? preferSerialPath(body.portPath ?? "") : null;
+    const normalizedProfileSummary = normalizeRecoveryProfileSummary(body.profileSummary);
 
     if (target === "serial" && !portPath) {
       throw new Error("Missing portPath.");
     }
+
+    assertSupportedBrushSelection(
+      normalizedProfileSummary.brushShape,
+      normalizedProfileSummary.brushSize,
+    );
 
     const recoverySession =
       body.resumePlan && typeof body.resumePlan === "object"
@@ -1732,7 +1849,7 @@ async function handleExecutionStart(
               typeof body.sourceLabel === "string" && body.sourceLabel.trim().length > 0
                 ? body.sourceLabel.trim()
                 : "untitled-drawing",
-            profileSummary: normalizeRecoveryProfileSummary(body.profileSummary),
+            profileSummary: normalizedProfileSummary,
             serialOptions: {
               baudRate: body.baudRate ?? 115200,
               ackTimeoutMs: normalizeAckTimeoutMs(body.ackTimeoutMs),
@@ -1909,9 +2026,11 @@ async function handleExecutionReset(response: ServerResponse): Promise<void> {
 }
 
 async function handleRecoverySessions(response: ServerResponse): Promise<void> {
+  const sessions = await webRuntime.recoverySessions.listSessions();
+
   json(response, 200, {
     success: true,
-    sessions: await webRuntime.recoverySessions.listSessions(),
+    sessions: sessions.map(normalizeRecoverySessionSummary),
   });
 }
 
@@ -1939,7 +2058,13 @@ async function handleRecoveryResume(
       throw new Error("Missing portPath.");
     }
 
-    const recoverySession = await webRuntime.recoverySessions.loadSession(body.sessionId);
+    const recoverySession = normalizeRecoverySessionRecord(
+      await webRuntime.recoverySessions.loadSession(body.sessionId),
+    );
+    assertSupportedBrushSelection(
+      recoverySession.profileSummary.brushShape,
+      recoverySession.profileSummary.brushSize,
+    );
     const commands = await webRuntime.recoverySessions.loadCommands(body.sessionId);
     const recoveryPlan = buildRecoveryExecutionPlan({
       commands,
@@ -2042,6 +2167,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     }
 
     const url = new URL(request.url, `http://${webRuntime.host}:${webRuntime.port}`);
+    assertTrustedApiRequest(request, url);
 
     if (request.method === "GET" && url.pathname === "/") {
       await serveStatic(response, "index.html");
@@ -2203,73 +2329,108 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     json(response, 404, { error: "Not found." });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    json(response, 500, { error: message });
+    const statusCode = error instanceof HttpError ? error.statusCode : 500;
+    json(response, statusCode, { error: message });
   }
 }
+
+let webServerLeaseHeld = false;
 
 export async function startWebServer(
   options: StartWebServerOptions = {},
 ): Promise<WebServerHandle> {
-  webRuntime = {
-    host: options.host ?? defaultHost,
-    port: options.port ?? defaultPort,
-    staticRoot: options.staticRoot ?? defaultStaticRoot,
-    firmwareRoot: options.firmwareRoot ?? defaultFirmwareRoot,
-    refreshFirmwareRoot: options.refreshFirmwareRoot,
-    toolingManager: new FirmwareToolingManager({
-      appDataRoot: options.appDataRoot ?? defaultAppDataRoot,
-      ...(options.toolingPaths ? { initialConfig: options.toolingPaths } : {}),
-    }),
-    windowsSerialDriverManager: new WindowsSerialDriverManager(
-      options.windowsDriverRoot ?? defaultWindowsDriverRoot,
-    ),
-    flashManager: new FirmwareFlashManager(),
-    recoverySessions: new RecoverySessionStore(
-      options.recoverySessionsRoot ?? defaultRecoverySessionsRoot,
-    ),
-  };
+  if (webServerLeaseHeld) {
+    throw new Error("A web server is already running in this process.");
+  }
 
-  await webRuntime.recoverySessions.cleanupSessions({ startup: true });
+  webServerLeaseHeld = true;
+  let server: Server | null = null;
 
-  const server = createServer(handleRequest);
-
-  await new Promise<void>((resolve, reject) => {
-    const handleError = (error: Error): void => {
-      reject(error);
+  try {
+    webRuntime = {
+      host: options.host ?? defaultHost,
+      port: options.port ?? defaultPort,
+      staticRoot: options.staticRoot ?? defaultStaticRoot,
+      firmwareRoot: options.firmwareRoot ?? defaultFirmwareRoot,
+      refreshFirmwareRoot: options.refreshFirmwareRoot,
+      toolingManager: new FirmwareToolingManager({
+        appDataRoot: options.appDataRoot ?? defaultAppDataRoot,
+        ...(options.toolingPaths ? { initialConfig: options.toolingPaths } : {}),
+      }),
+      windowsSerialDriverManager: new WindowsSerialDriverManager(
+        options.windowsDriverRoot ?? defaultWindowsDriverRoot,
+      ),
+      flashManager: new FirmwareFlashManager(),
+      recoverySessions: new RecoverySessionStore(
+        options.recoverySessionsRoot ?? defaultRecoverySessionsRoot,
+      ),
     };
 
-    server.once("error", handleError);
-    server.listen(webRuntime.port, webRuntime.host, () => {
-      server.off("error", handleError);
-      resolve();
-    });
-  });
+    await webRuntime.recoverySessions.cleanupSessions({ startup: true });
 
-  const address = server.address();
-  const actualPort = typeof address === "object" && address !== null ? address.port : webRuntime.port;
-  webRuntime.port = actualPort;
+    server = createServer(handleRequest);
+    const activeServer = server;
 
-  return {
-    server,
-    host: webRuntime.host,
-    port: actualPort,
-    url: `http://${webRuntime.host}:${actualPort}`,
-    close: async () => {
-      await webRuntime.flashManager.shutdown();
-      await serialSessionManager.disconnect({ force: true }).catch(() => undefined);
-      resetManagedExecutionState();
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
+    await new Promise<void>((resolve, reject) => {
+      const handleError = (error: Error): void => {
+        reject(error);
+      };
 
-          resolve();
-        });
+      activeServer.once("error", handleError);
+      activeServer.listen(webRuntime.port, webRuntime.host, () => {
+        activeServer.off("error", handleError);
+        resolve();
       });
-    },
-  };
+    });
+
+    const address = activeServer.address();
+    const actualPort = typeof address === "object" && address !== null ? address.port : webRuntime.port;
+    webRuntime.port = actualPort;
+    let closed = false;
+
+    return {
+      server: activeServer,
+      host: webRuntime.host,
+      port: actualPort,
+      url: `http://${webRuntime.host}:${actualPort}`,
+      close: async () => {
+        if (closed) {
+          return;
+        }
+
+        closed = true;
+
+        try {
+          await webRuntime.flashManager.shutdown();
+          await serialSessionManager.disconnect({ force: true }).catch(() => undefined);
+          resetManagedExecutionState();
+          await new Promise<void>((resolve, reject) => {
+            activeServer.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+
+              resolve();
+            });
+          });
+        } finally {
+          webServerLeaseHeld = false;
+        }
+      },
+    };
+  } catch (error) {
+    webServerLeaseHeld = false;
+
+    if (server) {
+      const activeServer = server;
+      await new Promise<void>((resolve) => {
+        activeServer.close(() => resolve());
+      }).catch(() => undefined);
+    }
+
+    throw error;
+  }
 }
 
 function isDirectRun(): boolean {
