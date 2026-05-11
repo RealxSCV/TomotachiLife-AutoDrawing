@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import { deriveResumeProgress } from "../app/recovery.js";
-import type { BrushSize, ColorMode, ResumePlan } from "../types.js";
+import type { BrushShape, BrushSize, ColorMode, ResumePlan } from "../types.js";
 
 export type RecoverySessionStatus =
   | "running"
@@ -15,6 +15,7 @@ export type RecoverySessionStatus =
 
 export interface RecoveryProfileSummary {
   brushSize: BrushSize;
+  brushShape: BrushShape;
   colorMode: ColorMode;
   templateId: string;
   templateLabel: string;

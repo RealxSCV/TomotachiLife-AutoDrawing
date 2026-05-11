@@ -38,6 +38,7 @@ function makeProfile(overrides: Partial<DrawingProfile> = {}): DrawingProfile {
     monoThreshold: 128,
     palette: ["#000000", "#ffffff"],
     brushSize: 1,
+    brushShape: "square",
     startCursor: "center",
     startTool: "pen",
     startColorIndex: 0,
@@ -72,6 +73,7 @@ function makePixelMap(
 function makeRecoveryProfileSummary(profile: DrawingProfile) {
   return {
     brushSize: profile.brushSize,
+    brushShape: profile.brushShape,
     colorMode: profile.colorMode,
     templateId: "none",
     templateLabel: "无模板（正方形）",
@@ -607,4 +609,40 @@ test("execution reset keeps unfinished recovery sessions recoverable", async () 
 
     await rm(recoverySessionsRoot, { recursive: true, force: true });
   }
+});
+
+test("execution start rejects unsupported round large-brush recovery sessions", async (t) => {
+  const recoverySessionsRoot = await mkdtemp(path.join(os.tmpdir(), "friendmaker-recovery-round-"));
+  t.after(async () => {
+    await rm(recoverySessionsRoot, { recursive: true, force: true });
+  });
+
+  const server = await startWebServer({ port: 0, recoverySessionsRoot });
+  t.after(async () => {
+    await server.close();
+  });
+
+  const response = await fetch(`${server.url}/api/execution/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      commands: ["CFG INPUT 65 45 1800", "E"],
+      target: "simulate",
+      profileSummary: {
+        brushSize: 3,
+        brushShape: "round",
+        colorMode: "mono",
+        templateId: "none",
+        templateLabel: "无模板（正方形）",
+        imageScalePercent: 100,
+        imageOffsetXPercent: 0,
+        imageOffsetYPercent: 0,
+      },
+    }),
+  });
+
+  assert.equal(response.ok, false);
+  const payload = (await response.json()) as { error?: string };
+  assert.match(payload.error ?? "", /圆形/u);
+  assert.match(payload.error ?? "", /暂不支持/u);
 });

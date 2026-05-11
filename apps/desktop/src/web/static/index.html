@@ -135,7 +135,7 @@
             <div class="execution-box mono-note-box">
               <div class="panel-head compact">
                 <h2>绘制模式</h2>
-                <p>当前固定走 256x256 脚本坐标画布并从画布中心起步。单色模式画黑白图，官方色模式会量化到游戏内置的 7x12 色盘；自定义多色模式会先自动量化颜色，再按批次写入 9 个自定义色槽。现在也可以给画布套用异形图纸模板，模板外区域会直接裁掉。建议在游戏里切换为方块笔刷，整体观感通常会更美观。</p>
+                <p>当前固定走 256x256 脚本坐标画布并从画布中心起步。单色模式画黑白图，官方色模式会量化到游戏内置的 7x12 色盘；自定义多色模式会先自动量化颜色，再按批次写入 9 个自定义色槽。现在也可以给画布套用异形图纸模板，模板外区域会直接裁掉。第一版会正式按方形笔刷建模；圆形笔刷只保证 1 号笔的单点场景。</p>
               </div>
 
               <p class="hint" id="studio-mode-hint">
@@ -160,6 +160,14 @@
                   <option value="13">13</option>
                   <option value="19">19</option>
                   <option value="27">27</option>
+                </select>
+              </label>
+
+              <label>
+                <span>笔刷形状</span>
+                <select id="brush-shape-select">
+                  <option value="square" selected>方形笔刷</option>
+                  <option value="round">圆形笔刷</option>
                 </select>
               </label>
 

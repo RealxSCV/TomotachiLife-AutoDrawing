@@ -9,7 +9,9 @@ export function serializeCommand(command: DrawCommand): string {
     case "move":
       return `M ${command.dx} ${command.dy}`;
     case "line":
-      return `L ${command.dx} ${command.dy}`;
+      return command.stride && command.stride > 1
+        ? `L ${command.dx} ${command.dy} ${command.stride}`
+        : `L ${command.dx} ${command.dy}`;
     case "draw":
       return "P";
     case "press":

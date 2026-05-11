@@ -34,6 +34,7 @@ function makeProfile(overrides: Partial<DrawingProfile> = {}): DrawingProfile {
     monoThreshold: 128,
     palette: ["#000000", "#ffffff"],
     brushSize: 1,
+    brushShape: "square",
     startCursor: "center",
     startTool: "pen",
     startColorIndex: 0,
@@ -151,6 +152,30 @@ test("/api/generate echoes timing overrides into commands and estimated runtime"
     overridePayload.stats.estimatedRuntimeMs < defaultPayload.stats.estimatedRuntimeMs,
     "expected faster timing overrides to reduce estimated runtime",
   );
+});
+
+test("/api/generate rejects unsupported round large-brush requests", async (t) => {
+  const server = await startWebServer({ port: 0 });
+  t.after(async () => {
+    await server.close();
+  });
+
+  const imageDataUrl = await solidPngDataUrl(4, 4);
+  const response = await fetch(`${server.url}/api/generate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      imageDataUrl,
+      previewScale: 1,
+      brushSize: 3,
+      brushShape: "round",
+    }),
+  });
+
+  assert.equal(response.ok, false);
+  const payload = (await response.json()) as { error?: string };
+  assert.match(payload.error ?? "", /圆形/u);
+  assert.match(payload.error ?? "", /暂不支持/u);
 });
 
 test("loadProfile clamps legacy ack timeout values to the supported minimum", async (t) => {

@@ -47,6 +47,7 @@ function makeProfile(overrides: Partial<DrawingProfile> = {}): DrawingProfile {
     monoThreshold: 128,
     palette: ["#000000", "#ffffff"],
     brushSize: 1,
+    brushShape: "square",
     startCursor: "center",
     startTool: "pen",
     startColorIndex: 0,
@@ -398,6 +399,7 @@ test("dynamic timeouts follow CFG INPUT timing", () => {
   assert.equal(getAckTimeoutForCommand("CFG INPUT 100 100 1800", 500, timing), 500);
   assert.equal(getAckTimeoutForCommand("M 3 0", 500, timing), 1600);
   assert.equal(getAckTimeoutForCommand("L 3 0", 500, timing), 1800);
+  assert.equal(getAckTimeoutForCommand("L 6 0 3", 500, timing), 2056);
   assert.equal(getAckTimeoutForCommand("H", 500, timing), 4700);
 });
 

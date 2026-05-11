@@ -75,6 +75,7 @@ const state = {
     target: "serial",
     canvasSize: 256,
     brushSize: 3,
+    brushShape: "square",
     templateCategory: "all",
     templateId: "none",
     templateLabel: "无模板（正方形）",
@@ -106,8 +107,14 @@ const state = {
       inputDelay: 45,
       buttonPressDuration: 65,
       homeDuration: 1800,
+      brushSize: 3,
+      brushShape: "square",
+      colorMode: "mono",
       templateId: "none",
       templateLabel: "无模板（正方形）",
+      imageScalePercent: 100,
+      imageOffsetXPercent: 0,
+      imageOffsetYPercent: 0,
     },
     execution: {
       id: null,
@@ -224,6 +231,7 @@ const els = {
   studioModeHint: document.getElementById("studio-mode-hint"),
   sizeSelect: document.getElementById("size-select"),
   brushSizeSelect: document.getElementById("brush-size-select"),
+  brushShapeSelect: document.getElementById("brush-shape-select"),
   templateCategorySelect: document.getElementById("template-category-select"),
   templateSelect: document.getElementById("template-select"),
   templatePreviewImage: document.getElementById("template-preview-image"),
@@ -466,6 +474,49 @@ const TEMPLATE_CATEGORY_LABELS = {
   base: "默认",
 };
 
+function normalizeBrushShapeValue(value) {
+  return value === "round" ? "round" : "square";
+}
+
+function isRoundLargeBrushSelection(brushShape, brushSize) {
+  return normalizeBrushShapeValue(brushShape) === "round" && Number(brushSize) > 1;
+}
+
+function buildCurrentStudioProfileSummary() {
+  return {
+    brushSize: state.studio.brushSize,
+    brushShape: normalizeBrushShapeValue(state.studio.brushShape),
+    colorMode: state.studio.colorMode,
+    templateId: state.studio.templateId,
+    templateLabel: state.studio.templateLabel,
+    imageScalePercent: state.studio.imageScalePercent,
+    imageOffsetXPercent: state.studio.imageOffsetXPercent,
+    imageOffsetYPercent: state.studio.imageOffsetYPercent,
+  };
+}
+
+function getGeneratedStudioProfileSummary() {
+  return {
+    brushSize: Number(state.studio.profile.brushSize ?? state.studio.brushSize),
+    brushShape: normalizeBrushShapeValue(state.studio.profile.brushShape),
+    colorMode:
+      state.studio.profile.colorMode === "official" || state.studio.profile.colorMode === "palette"
+        ? state.studio.profile.colorMode
+        : "mono",
+    templateId: state.studio.profile.templateId ?? state.studio.templateId,
+    templateLabel: state.studio.profile.templateLabel ?? state.studio.templateLabel,
+    imageScalePercent: state.studio.profile.imageScalePercent ?? state.studio.imageScalePercent,
+    imageOffsetXPercent:
+      state.studio.profile.imageOffsetXPercent ?? state.studio.imageOffsetXPercent,
+    imageOffsetYPercent:
+      state.studio.profile.imageOffsetYPercent ?? state.studio.imageOffsetYPercent,
+  };
+}
+
+function getStudioExecutionProfileSummary() {
+  return state.commands.length > 0 ? getGeneratedStudioProfileSummary() : buildCurrentStudioProfileSummary();
+}
+
 els.pageTabs.forEach((button) => {
   button.addEventListener("click", () => {
     switchPage(button.dataset.pageTarget ?? "studio");
@@ -480,6 +531,12 @@ els.sizeSelect.addEventListener("change", () => {
 
 els.brushSizeSelect.addEventListener("change", () => {
   state.studio.brushSize = Number(els.brushSizeSelect.value);
+  syncStudioUi();
+  scheduleStudioPreviewRefresh();
+});
+
+els.brushShapeSelect.addEventListener("change", () => {
+  state.studio.brushShape = normalizeBrushShapeValue(els.brushShapeSelect.value);
   syncStudioUi();
   scheduleStudioPreviewRefresh();
 });
@@ -980,6 +1037,7 @@ function buildStudioGeneratePayload() {
     imageDataUrl: state.imageDataUrl,
     size: state.studio.canvasSize,
     brushSize: state.studio.brushSize,
+    brushShape: normalizeBrushShapeValue(state.studio.brushShape),
     templateId: state.studio.templateId,
     imageScalePercent: state.studio.imageScalePercent,
     imageOffsetXPercent: state.studio.imageOffsetXPercent,
@@ -1032,10 +1090,22 @@ function applyGeneratedStudioPayload(payload) {
     buttonPressDuration:
       payload.profile.buttonPressDuration ?? state.sharedTiming.buttonPressDuration,
     homeDuration: payload.profile.homeDuration ?? state.sharedTiming.homeDuration,
+    brushSize: payload.profile.brushSize ?? state.studio.brushSize,
+    brushShape: normalizeBrushShapeValue(payload.profile.brushShape),
+    colorMode:
+      payload.profile.colorMode === "official" || payload.profile.colorMode === "palette"
+        ? payload.profile.colorMode
+        : "mono",
     templateId: payload.profile.templateId ?? state.studio.templateId,
     templateLabel: payload.profile.templateLabel ?? state.studio.templateLabel,
+    imageScalePercent: payload.profile.imageScalePercent ?? state.studio.imageScalePercent,
+    imageOffsetXPercent:
+      payload.profile.imageOffsetXPercent ?? state.studio.imageOffsetXPercent,
+    imageOffsetYPercent:
+      payload.profile.imageOffsetYPercent ?? state.studio.imageOffsetYPercent,
   };
   state.studio.brushSize = payload.profile.brushSize ?? state.studio.brushSize;
+  state.studio.brushShape = normalizeBrushShapeValue(payload.profile.brushShape);
   applySelectedStudioTemplate(payload.profile.templateId ?? state.studio.templateId);
   state.studio.imageScalePercent =
     payload.profile.imageScalePercent ?? state.studio.imageScalePercent;
@@ -1180,7 +1250,12 @@ function cancelStudioPreviewRefresh() {
 }
 
 function scheduleStudioPreviewRefresh(options = {}) {
-  if (!state.imageDataUrl || state.studio.busy || isStudioExecutionActive()) {
+  if (
+    !state.imageDataUrl ||
+    state.studio.busy ||
+    isStudioExecutionActive() ||
+    isRoundLargeBrushSelection(state.studio.brushShape, state.studio.brushSize)
+  ) {
     return;
   }
 
@@ -1194,7 +1269,12 @@ function scheduleStudioPreviewRefresh(options = {}) {
 }
 
 async function refreshStudioPreview() {
-  if (!state.imageDataUrl || state.studio.busy || isStudioExecutionActive()) {
+  if (
+    !state.imageDataUrl ||
+    state.studio.busy ||
+    isStudioExecutionActive() ||
+    isRoundLargeBrushSelection(state.studio.brushShape, state.studio.brushSize)
+  ) {
     return false;
   }
 
@@ -1244,13 +1324,7 @@ async function executeStudioCommands({ logPrefix }) {
         resumePlan: state.studio.resumePlan,
         sourceLabel: state.imageSourceLabel ?? "untitled-drawing",
         profileSummary: {
-          brushSize: state.studio.brushSize,
-          colorMode: state.studio.colorMode,
-          templateId: state.studio.templateId,
-          templateLabel: state.studio.templateLabel,
-          imageScalePercent: state.studio.imageScalePercent,
-          imageOffsetXPercent: state.studio.imageOffsetXPercent,
-          imageOffsetYPercent: state.studio.imageOffsetYPercent,
+          ...getStudioExecutionProfileSummary(),
         },
         portPath: state.selectedPortPath,
         baudRate: state.studio.profile.baudRate,
@@ -2941,9 +3015,21 @@ function syncStudioUi() {
   const executionRunning = state.studio.execution.status === "running";
   const executionStopping = state.studio.execution.status === "stopping";
   const showExecutionEmergencyReset = shouldShowExecutionEmergencyReset();
+  const unsupportedSelectedBrush = isRoundLargeBrushSelection(
+    state.studio.brushShape,
+    state.studio.brushSize,
+  );
+  const generatedProfile = getGeneratedStudioProfileSummary();
+  const unsupportedGeneratedBrush = isRoundLargeBrushSelection(
+    generatedProfile.brushShape,
+    generatedProfile.brushSize,
+  );
+  const selectedBrushShapeLabel =
+    normalizeBrushShapeValue(state.studio.brushShape) === "round" ? "圆形笔刷" : "方形笔刷";
 
   els.sizeSelect.value = String(state.studio.canvasSize);
   els.brushSizeSelect.value = String(state.studio.brushSize);
+  els.brushShapeSelect.value = normalizeBrushShapeValue(state.studio.brushShape);
   syncStudioTemplateOptions();
   els.templateCategorySelect.value = state.studio.templateCategory;
   els.templateSelect.value = state.studio.templateId;
@@ -2963,7 +3049,12 @@ function syncStudioUi() {
   const backgroundHint = state.studio.removeBackground
     ? "已开启自动扣背景，会优先去掉白底、浅灰底和棋盘格假透明背景。"
     : "当前不会自动扣背景；如果素材是白底或棋盘格假透明图，建议开启。";
-  const squareBrushHint = "建议同时把 Switch 里的笔刷切到方块笔刷，整体观感通常会更美观。";
+  const brushShapeHint =
+    normalizeBrushShapeValue(state.studio.brushShape) === "square"
+      ? "当前按方形笔刷规划；开始前也请把 Switch 里的笔刷切到方形笔刷。"
+      : state.studio.brushSize === 1
+        ? "当前选的是 1 号圆形笔刷；这一档仍可按单点模式继续生成和执行。"
+        : `当前选的是 ${state.studio.brushSize} 号圆形笔刷；这一档暂不支持生成或执行，请切回方形笔刷或使用 1 号笔。`;
   const templateHint =
     state.studio.templateId === "none"
       ? "当前使用正方形画布，不会额外裁掉模板外区域。"
@@ -2975,18 +3066,25 @@ function syncStudioUi() {
   );
   if (state.studio.colorMode === "mono") {
     els.studioModeHint.textContent =
-      `深色像素会绘制，浅色像素会保留为空白背景。当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再放进 256x256 脚本坐标画布，并按 ${state.studio.brushSize} 号笔和画布中心起步生成。${templateHint}${scaleHint}${positionHint}${squareBrushHint}${backgroundHint}`;
+      unsupportedSelectedBrush
+        ? `${brushShapeHint}${templateHint}${scaleHint}${positionHint}${backgroundHint}`
+        : `深色像素会绘制，浅色像素会保留为空白背景。当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再放进 256x256 脚本坐标画布，并按 ${state.studio.brushSize} 号笔和画布中心起步生成。${templateHint}${scaleHint}${positionHint}${brushShapeHint}${backgroundHint}`;
   } else if (state.studio.colorMode === "official") {
     els.studioModeHint.textContent =
-      `当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再把图片压到 ${state.studio.colorCount} 个官方色以内，并映射到游戏内置的 7x12 官方色盘，再按 ${state.studio.brushSize} 号笔生成。${templateHint}${scaleHint}${positionHint}开始前请保持右侧 9 个槽位默认颜色不变。${squareBrushHint}${backgroundHint}`;
+      unsupportedSelectedBrush
+        ? `${brushShapeHint}${templateHint}${scaleHint}${positionHint}${backgroundHint}`
+        : `当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再把图片压到 ${state.studio.colorCount} 个官方色以内，并映射到游戏内置的 7x12 官方色盘，再按 ${state.studio.brushSize} 号笔生成。${templateHint}${scaleHint}${positionHint}开始前请保持右侧 9 个槽位默认颜色不变。${brushShapeHint}${backgroundHint}`;
   } else {
     els.studioModeHint.textContent =
-      `当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再把图片自动量化到最多 ${state.studio.colorCount} 个颜色，并按批次写入游戏的 9 个自定义槽位后进行绘制。下方“当前预览用色”会完整列出这次预览实际用到的全部颜色。${templateHint}${scaleHint}${positionHint}开始前建议先确认手柄链路和 timing 已经稳定；对颜色数量较多或结构较复杂的图片，可以先生成预览再正式开始。${squareBrushHint}${backgroundHint}`;
+      unsupportedSelectedBrush
+        ? `${brushShapeHint}${templateHint}${scaleHint}${positionHint}${backgroundHint}`
+        : `当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再把图片自动量化到最多 ${state.studio.colorCount} 个颜色，并按批次写入游戏的 9 个自定义槽位后进行绘制。下方“当前预览用色”会完整列出这次预览实际用到的全部颜色。${templateHint}${scaleHint}${positionHint}开始前建议先确认手柄链路和 timing 已经稳定；对颜色数量较多或结构较复杂的图片，可以先生成预览再正式开始。${brushShapeHint}${backgroundHint}`;
   }
   els.studioPortSelect.disabled = state.studio.busy || executionActive;
   els.refreshPortsButton.disabled = state.studio.busy || executionActive;
   els.sizeSelect.disabled = state.studio.busy || executionActive;
   els.brushSizeSelect.disabled = state.studio.busy || executionActive;
+  els.brushShapeSelect.disabled = state.studio.busy || executionActive;
   els.templateCategorySelect.disabled = state.studio.busy || executionActive;
   els.templateSelect.disabled = state.studio.busy || executionActive;
   els.scaleRange.disabled = state.studio.busy || executionActive;
@@ -3010,14 +3108,17 @@ function syncStudioUi() {
     executionActive ||
     !hasImage ||
     !hasPort ||
-    !controllerReady;
+    !controllerReady ||
+    unsupportedSelectedBrush;
   els.executeButton.disabled =
     state.studio.busy ||
     executionActive ||
     state.commands.length === 0 ||
     !hasPort ||
-    !controllerReady;
-  els.generateButton.disabled = state.studio.busy || executionActive;
+    !controllerReady ||
+    unsupportedGeneratedBrush;
+  els.generateButton.disabled =
+    state.studio.busy || executionActive || unsupportedSelectedBrush;
   els.pauseExecutionButton.disabled = !executionRunning;
   els.resumeExecutionButton.disabled = !executionPaused;
   els.stopExecutionButton.disabled = !(executionRunning || executionPaused);
@@ -3037,6 +3138,15 @@ function syncStudioUi() {
 
   if (!hasImage) {
     els.executionHint.textContent = "请先导入一张图片，然后可以直接点“一键开始绘制”。";
+    renderStudioConnectionStatus();
+    return;
+  }
+
+  if (unsupportedSelectedBrush) {
+    els.executionHint.textContent =
+      state.commands.length > 0 && !unsupportedGeneratedBrush
+        ? `当前控件已切到 ${state.studio.brushSize} 号${selectedBrushShapeLabel}，这一档暂不支持重新生成；你仍可以执行上一次按 ${generatedProfile.brushSize} 号${generatedProfile.brushShape === "round" ? "圆形笔刷" : "方形笔刷"}生成的脚本。`
+        : `当前选的是 ${state.studio.brushSize} 号${selectedBrushShapeLabel}，这一档暂不支持生成或执行。请切回方形笔刷，或改用 1 号圆形笔刷。`;
     renderStudioConnectionStatus();
     return;
   }
@@ -3063,10 +3173,10 @@ function syncStudioUi() {
 
   els.executionHint.textContent =
     state.studio.colorMode === "mono"
-      ? `当前会把按 ${state.studio.imageScalePercent}% 缩放、${describeImagePosition(state.studio.imageOffsetXPercent, state.studio.imageOffsetYPercent, false)}后的 256x256 黑白脚本通过串口发送到 ${state.selectedPortPath}，模板为“${state.studio.templateLabel}”。由 ESP32 从画布中心起步，按 ${state.studio.brushSize} 号笔继续翻译成方向键移动与 A 绘制。建议开始前把 Switch 里的笔刷切到方块笔刷，整体观感通常会更美观。`
-      : state.studio.colorMode === "official"
-        ? `当前会把按 ${state.studio.imageScalePercent}% 缩放、${describeImagePosition(state.studio.imageOffsetXPercent, state.studio.imageOffsetYPercent, false)}后的 256x256 官方色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${state.studio.templateLabel}”。请先保持右侧 9 个槽位默认颜色不变，ESP32 会按这组默认槽位状态去配置内置 7x12 色盘，并按 ${state.studio.brushSize} 号笔绘制。建议开始前把 Switch 里的笔刷切到方块笔刷，整体观感通常会更美观。`
-        : `当前会把按 ${state.studio.imageScalePercent}% 缩放、${describeImagePosition(state.studio.imageOffsetXPercent, state.studio.imageOffsetYPercent, false)}后的 256x256 自动量化多色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${state.studio.templateLabel}”。ESP32 会分批把当前预览实际用到的颜色写入 9 个自定义槽位后再绘制；这条路线仍处于实验阶段，建议先从颜色较少、结构简单的图片开始。`;
+      ? `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 黑白脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。由 ESP32 从画布中心起步，按 ${generatedProfile.brushSize} 号${generatedProfile.brushShape === "round" ? "圆形笔刷" : "方形笔刷"}继续翻译成方向键移动与 A 绘制。`
+      : generatedProfile.colorMode === "official"
+        ? `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 官方色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。请先保持右侧 9 个槽位默认颜色不变，ESP32 会按这组默认槽位状态去配置内置 7x12 色盘，并按 ${generatedProfile.brushSize} 号${generatedProfile.brushShape === "round" ? "圆形笔刷" : "方形笔刷"}绘制。`
+        : `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 自动量化多色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。ESP32 会分批把当前预览实际用到的颜色写入 9 个自定义槽位后再绘制；这条路线仍处于实验阶段，建议先从颜色较少、结构简单的图片开始。`;
   renderStudioConnectionStatus();
 }
 

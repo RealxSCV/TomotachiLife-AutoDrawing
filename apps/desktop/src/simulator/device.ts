@@ -18,6 +18,24 @@ function parseTwoInts(line: string): { first: number; second: number } | null {
   return { first, second };
 }
 
+function parseLineCommand(line: string): { dx: number; dy: number; stride: number } | null {
+  const parts = line.trim().split(/\s+/u);
+
+  if (parts.length !== 3 && parts.length !== 4) {
+    return null;
+  }
+
+  const dx = Number.parseInt(parts[1] ?? "", 10);
+  const dy = Number.parseInt(parts[2] ?? "", 10);
+  const stride = parts.length === 4 ? Number.parseInt(parts[3] ?? "", 10) : 1;
+
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(stride) || stride <= 0) {
+    return null;
+  }
+
+  return { dx, dy, stride };
+}
+
 function parseOneInt(line: string): number | null {
   const parts = line.trim().split(/\s+/u);
 
@@ -267,17 +285,21 @@ export class SimulatedDevice {
     }
 
     if (trimmed.startsWith("L ")) {
-      const parsed = parseTwoInts(trimmed);
+      const parsed = parseLineCommand(trimmed);
 
-      if (!parsed || (parsed.first === 0 && parsed.second === 0) || (parsed.first !== 0 && parsed.second !== 0)) {
+      if (!parsed || (parsed.dx === 0 && parsed.dy === 0) || (parsed.dx !== 0 && parsed.dy !== 0)) {
         await delay(options.ackDelayMs);
         return this.cacheAndReturn(frame, this.makeError(frame, "invalid line"), lines);
       }
 
+      const steps = Math.abs(parsed.dx) + Math.abs(parsed.dy);
       this.state.drawCount += 1;
-      this.state.x += parsed.first;
-      this.state.y += parsed.second;
-      this.state.drawCount += Math.abs(parsed.first) + Math.abs(parsed.second);
+      this.state.x += parsed.dx;
+      this.state.y += parsed.dy;
+      this.state.drawCount +=
+        parsed.stride > 1 && steps % parsed.stride === 0
+          ? steps / parsed.stride
+          : steps;
       await delay(options.ackDelayMs);
       return this.cacheAndReturn(frame, this.makeAck(frame), lines);
     }

@@ -8,6 +8,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { generateDrawPlan } from "../app/generateDrawPlan.js";
 import { buildRecoveryExecutionPlan, deriveResumeProgress } from "../app/recovery.js";
+import {
+  getUnsupportedBrushShapeMessage,
+  normalizeBrushShape,
+} from "../brushBehavior.js";
 import { applyCliOptions, type CliOptions } from "../cli/args.js";
 import { DEFAULT_ACK_TIMEOUT_MS } from "../config/defaultProfile.js";
 import { loadProfile } from "../config/loadProfile.js";
@@ -1001,6 +1005,7 @@ function normalizeRecoveryProfileSummary(value: unknown): ExecutionStartProfileS
 
   return {
     brushSize: normalizeBrushSize(summary.brushSize, 3),
+    brushShape: normalizeBrushShape(summary.brushShape, "square"),
     colorMode:
       summary.colorMode === "official" || summary.colorMode === "palette" ? summary.colorMode : "mono",
     templateId: typeof summary.templateId === "string" ? summary.templateId : "none",
@@ -1009,6 +1014,33 @@ function normalizeRecoveryProfileSummary(value: unknown): ExecutionStartProfileS
     imageOffsetXPercent: normalizeImageOffsetPercent(summary.imageOffsetXPercent),
     imageOffsetYPercent: normalizeImageOffsetPercent(summary.imageOffsetYPercent),
   };
+}
+
+function normalizeRecoverySessionSummary(summary: RecoverySessionSummary): RecoverySessionSummary {
+  return {
+    ...summary,
+    profileSummary: normalizeRecoveryProfileSummary(summary.profileSummary),
+  };
+}
+
+function normalizeRecoverySessionRecord(record: RecoverySessionRecord): RecoverySessionRecord {
+  return {
+    ...record,
+    profileSummary: normalizeRecoveryProfileSummary(record.profileSummary),
+  };
+}
+
+function assertSupportedBrushSelection(
+  brushShape: "square" | "round",
+  brushSize: number,
+): void {
+  const normalizedBrushShape = normalizeBrushShape(brushShape, "square");
+  const normalizedBrushSize = normalizeBrushSize(brushSize, 1);
+  const message = getUnsupportedBrushShapeMessage(normalizedBrushShape, normalizedBrushSize);
+
+  if (message) {
+    throw new Error(message);
+  }
 }
 
 function isManagedExecutionActive(status: ExecutionStatus): boolean {
@@ -1026,7 +1058,9 @@ function appendManagedExecutionLine(execution: ManagedExecution, line: string): 
 function getManagedExecutionRecoverySummary(
   execution: ManagedExecution,
 ): RecoverySessionSummary | null {
-  return execution.recoverySession ? summarizeRecoverySession(execution.recoverySession) : null;
+  return execution.recoverySession
+    ? normalizeRecoverySessionSummary(summarizeRecoverySession(execution.recoverySession))
+    : null;
 }
 
 function snapshotManagedExecution(execution: ManagedExecution = managedExecution): Record<string, unknown> {
@@ -1114,6 +1148,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
     templateId?: string;
     size?: number;
     brushSize?: number;
+    brushShape?: "square" | "round";
     imageScalePercent?: number;
     imageOffsetXPercent?: number;
     imageOffsetYPercent?: number;
@@ -1164,12 +1199,14 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
   const profile = {
     ...baseProfile,
     brushSize: normalizeBrushSize(body.brushSize, baseProfile.brushSize),
+    brushShape: normalizeBrushShape(body.brushShape, baseProfile.brushShape),
     inputDelay: normalizeTimingDuration(body.inputDelay, baseProfile.inputDelay),
     buttonPressDuration: normalizeTimingDuration(
       body.buttonPressDuration,
       baseProfile.buttonPressDuration,
     ),
   };
+  assertSupportedBrushSelection(profile.brushShape, profile.brushSize);
   const drawingMask = await loadDrawingTemplateMask(template.id, profile.canvasWidth, profile.canvasHeight);
 
   const plan = await generateDrawPlan(
@@ -1191,6 +1228,7 @@ async function handleGenerate(request: IncomingMessage, response: ServerResponse
       canvasWidth: profile.canvasWidth,
       canvasHeight: profile.canvasHeight,
       brushSize: profile.brushSize,
+      brushShape: profile.brushShape,
       templateId: template.id,
       templateLabel: template.label,
       imageScalePercent,
@@ -1718,10 +1756,16 @@ async function handleExecutionStart(
 
     const target: ExecutionTarget = body.target === "simulate" ? "simulate" : "serial";
     const portPath = target === "serial" ? preferSerialPath(body.portPath ?? "") : null;
+    const normalizedProfileSummary = normalizeRecoveryProfileSummary(body.profileSummary);
 
     if (target === "serial" && !portPath) {
       throw new Error("Missing portPath.");
     }
+
+    assertSupportedBrushSelection(
+      normalizedProfileSummary.brushShape,
+      normalizedProfileSummary.brushSize,
+    );
 
     const recoverySession =
       body.resumePlan && typeof body.resumePlan === "object"
@@ -1732,7 +1776,7 @@ async function handleExecutionStart(
               typeof body.sourceLabel === "string" && body.sourceLabel.trim().length > 0
                 ? body.sourceLabel.trim()
                 : "untitled-drawing",
-            profileSummary: normalizeRecoveryProfileSummary(body.profileSummary),
+            profileSummary: normalizedProfileSummary,
             serialOptions: {
               baudRate: body.baudRate ?? 115200,
               ackTimeoutMs: normalizeAckTimeoutMs(body.ackTimeoutMs),
@@ -1909,9 +1953,11 @@ async function handleExecutionReset(response: ServerResponse): Promise<void> {
 }
 
 async function handleRecoverySessions(response: ServerResponse): Promise<void> {
+  const sessions = await webRuntime.recoverySessions.listSessions();
+
   json(response, 200, {
     success: true,
-    sessions: await webRuntime.recoverySessions.listSessions(),
+    sessions: sessions.map(normalizeRecoverySessionSummary),
   });
 }
 
@@ -1939,7 +1985,13 @@ async function handleRecoveryResume(
       throw new Error("Missing portPath.");
     }
 
-    const recoverySession = await webRuntime.recoverySessions.loadSession(body.sessionId);
+    const recoverySession = normalizeRecoverySessionRecord(
+      await webRuntime.recoverySessions.loadSession(body.sessionId),
+    );
+    assertSupportedBrushSelection(
+      recoverySession.profileSummary.brushShape,
+      recoverySession.profileSummary.brushSize,
+    );
     const commands = await webRuntime.recoverySessions.loadCommands(body.sessionId);
     const recoveryPlan = buildRecoveryExecutionPlan({
       commands,

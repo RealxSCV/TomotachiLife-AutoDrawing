@@ -1,4 +1,5 @@
 import type { DrawingProfile, Pixel, PixelMap, ResumePlan, ResumeSegment } from "../types.js";
+import { estimateSquareBrushStrideMoveHoldMs } from "../brushBehavior.js";
 import {
   createBrushGrid,
   gridCellToCanvasCenter,
@@ -618,7 +619,15 @@ function appendPixelRun(
   } else {
     const firstPosition = toCanvasPosition(firstPixel, grid);
     const lastPosition = toCanvasPosition(lastPixel, grid);
-    commands.push(lineCommand(lastPosition.x - firstPosition.x, lastPosition.y - firstPosition.y));
+    const lineStride =
+      profile.brushShape === "square" && profile.brushSize > 1 ? profile.brushSize : 1;
+    commands.push(
+      lineCommand(
+        lastPosition.x - firstPosition.x,
+        lastPosition.y - firstPosition.y,
+        lineStride,
+      ),
+    );
   }
 
   return toCanvasPosition(lastPixel, grid);
@@ -897,11 +906,37 @@ export function estimateRuntimeMs(commands: DrawCommand[], profile: DrawingProfi
             (timing.buttonPressMs + timing.inputDelayMs)
         );
       case "line":
-        return (
-          total +
-          (Math.abs(command.dx) + Math.abs(command.dy) + 1) *
-            (timing.buttonPressMs + timing.inputDelayMs)
-        );
+        if (!command.stride || command.stride <= 1) {
+          return (
+            total +
+            (Math.abs(command.dx) + Math.abs(command.dy) + 1) *
+              (timing.buttonPressMs + timing.inputDelayMs)
+          );
+        }
+
+        {
+          const steps = Math.abs(command.dx) + Math.abs(command.dy);
+
+          if (steps === 0 || steps % command.stride !== 0) {
+            return (
+              total +
+              (steps + 1) * (timing.buttonPressMs + timing.inputDelayMs)
+            );
+          }
+
+          const logicalSteps = steps / command.stride;
+          const moveHoldMs = estimateSquareBrushStrideMoveHoldMs(command.stride, {
+            buttonPressMs: timing.buttonPressMs,
+            homeMs: timing.homeMs,
+          });
+
+          return (
+            total +
+            (timing.buttonPressMs + timing.inputDelayMs) +
+            logicalSteps *
+              (moveHoldMs + timing.inputDelayMs + timing.buttonPressMs + timing.inputDelayMs)
+          );
+        }
       case "draw":
       case "press":
         return total + timing.buttonPressMs + timing.inputDelayMs;

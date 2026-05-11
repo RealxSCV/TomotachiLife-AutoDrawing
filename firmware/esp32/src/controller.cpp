@@ -160,7 +160,20 @@ bool SwitchController::drawStroke() {
   return transport_.pressButton(ControllerButton::A, buttonPressMs_, inputDelayMs_);
 }
 
-bool SwitchController::drawLine(int dx, int dy) {
+uint16_t SwitchController::estimateStrideMoveHoldMs(uint8_t stride) const {
+  if (stride <= 1) {
+    return buttonPressMs_;
+  }
+
+  const uint32_t perPixelHomeMs = homeMs_ > 0 ? homeMs_ / 128 : 0;
+  const uint32_t scaledPerPixelMs = perPixelHomeMs > 0 ? perPixelHomeMs : 1;
+  const uint32_t estimatedHoldMs =
+      static_cast<uint32_t>(buttonPressMs_) + scaledPerPixelMs * (stride - 1);
+
+  return estimatedHoldMs > 60000 ? 60000 : static_cast<uint16_t>(estimatedHoldMs);
+}
+
+bool SwitchController::drawLine(int dx, int dy, uint8_t stride) {
   waitUntilReady();
 
   const bool horizontal = dx != 0;
@@ -178,6 +191,25 @@ bool SwitchController::drawLine(int dx, int dy) {
 
   if (!transport_.pressButton(ControllerButton::A, buttonPressMs_, inputDelayMs_)) {
     return false;
+  }
+
+  if (stride > 1 && steps % stride == 0) {
+    const int moveX = horizontal ? (dx < 0 ? -1 : 1) : 0;
+    const int moveY = horizontal ? 0 : (dy < 0 ? -1 : 1);
+    const uint16_t holdMs = estimateStrideMoveHoldMs(stride);
+    const int hopCount = steps / stride;
+
+    for (int step = 0; step < hopCount; step += 1) {
+      if (!transport_.moveDirection(moveX, moveY, holdMs, inputDelayMs_)) {
+        return false;
+      }
+
+      if (!transport_.pressButton(ControllerButton::A, buttonPressMs_, inputDelayMs_)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   for (int step = 0; step < steps; step += 1) {
