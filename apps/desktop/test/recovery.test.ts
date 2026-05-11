@@ -109,6 +109,7 @@ function expectedBrushSetupPrefix(
 
   commands.push("BTN A");
   commands.push("BTN A");
+  commands.push("BTN A");
   commands.push("W 3000");
   return commands;
 }
@@ -156,9 +157,9 @@ test("mono resume segments keep the first draw command when the segment already 
   assert.deepEqual(scanlinePlan.resumePlan.initialCursor, { x: 2, y: 0 });
   assert.deepEqual(segment.resumePrefixCommands, [...expectedBrushSetupPrefix(1, "square"), "C 1"]);
   assert.deepEqual(segment.firstCanvasPosition, { x: 2, y: 0 });
-  assert.equal(segment.bodyStartCommandIndex, 7);
+  assert.equal(segment.bodyStartCommandIndex, 8);
   assert.equal(commands[segment.bodyStartCommandIndex], "P");
-  assert.equal(segment.commandEndExclusive, 8);
+  assert.equal(segment.commandEndExclusive, 9);
 });
 
 test("official and palette resume segments rebuild only unfinished color slots", () => {

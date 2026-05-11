@@ -77,9 +77,9 @@ export function buildAutomaticBrushSetupCommands(
   // Assumption: after pressing X twice, the brush picker opens with the 7px
   // round brush focused at row 0 / column 2. The current UI then lays out
   // round and square brushes as two rows of the same six size presets. After
-  // choosing the target brush with A, the game still needs one more A press to
-  // leave the brush picker and then about two seconds before the canvas starts
-  // accepting movement input again.
+  // choosing the target brush with A, the game still needs two more A presses
+  // to leave the brush picker and then about three seconds before the canvas
+  // starts accepting movement input again.
   const targetColumn = BRUSH_SELECTOR_COLUMN_BY_SIZE[profile.brushSize];
   const targetRow = BRUSH_SELECTOR_ROW_BY_SHAPE[profile.brushShape];
   const dx = targetColumn - DEFAULT_BRUSH_SELECTOR_COLUMN;
@@ -90,6 +90,7 @@ export function buildAutomaticBrushSetupCommands(
     commands.push(moveCommand(dx, dy));
   }
 
+  commands.push(pressButtonCommand("A"));
   commands.push(pressButtonCommand("A"));
   commands.push(pressButtonCommand("A"));
   commands.push(waitCommand(BRUSH_PICKER_EXIT_SETTLE_MS));
