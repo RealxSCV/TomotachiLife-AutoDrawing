@@ -109,7 +109,7 @@ function expectedBrushSetupPrefix(
 
   commands.push("BTN A");
   commands.push("BTN A");
-  commands.push("BTN A");
+  commands.push("W 3000");
   return commands;
 }
 

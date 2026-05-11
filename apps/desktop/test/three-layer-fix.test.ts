@@ -400,6 +400,7 @@ test("dynamic timeouts follow CFG INPUT timing", () => {
   assert.equal(getAckTimeoutForCommand("M 3 0", 500, timing), 1600);
   assert.equal(getAckTimeoutForCommand("L 3 0", 500, timing), 1800);
   assert.equal(getAckTimeoutForCommand("L 6 0 3", 500, timing), 2056);
+  assert.equal(getAckTimeoutForCommand("W 3000", 500, timing), 4000);
   assert.equal(getAckTimeoutForCommand("H", 500, timing), 4700);
 });
 

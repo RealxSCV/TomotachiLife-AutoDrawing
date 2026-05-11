@@ -403,6 +403,17 @@ export function getAckTimeoutForCommand(
     return boundedTimeout(1_000 + holdMs + timing.inputDelayMs);
   }
 
+  if (trimmed.startsWith("W ")) {
+    const match = /^W\s+(\d+)$/u.exec(trimmed);
+
+    if (!match?.[1]) {
+      return baseTimeoutMs;
+    }
+
+    const waitMs = Number.parseInt(match[1], 10);
+    return boundedTimeout(1_000 + waitMs);
+  }
+
   if (trimmed === "H") {
     return Math.max(baseTimeoutMs, 1_000 + timing.homeMs * 2 + timing.inputDelayMs);
   }
