@@ -11,6 +11,7 @@ export type DrawCommand =
   | { type: "basicPaletteReset" }
   | { type: "paletteConfig"; slot: number; colorHex: string }
   | { type: "basicPaletteConfig"; slot: number; row: number; col: number }
+  | { type: "adjustPalette"; slot: number; dHue: number; dSat: number; dVal: number }
   | { type: "wait"; ms: number }
   | { type: "pause" }
   | { type: "resume" }
@@ -58,6 +59,10 @@ export function paletteConfigCommand(slot: number, colorHex: string): DrawComman
 
 export function basicPaletteConfigCommand(slot: number, row: number, col: number): DrawCommand {
   return { type: "basicPaletteConfig", slot, row, col };
+}
+
+export function adjustPaletteCommand(slot: number, dHue: number, dSat: number, dVal: number): DrawCommand {
+  return { type: "adjustPalette", slot, dHue, dSat, dVal };
 }
 
 export function waitCommand(ms: number): DrawCommand {

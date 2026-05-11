@@ -6,6 +6,7 @@ import {
 } from "../brushGrid.js";
 import { officialPaletteCellFromIndex } from "../config/officialPalette.js";
 import {
+  adjustPaletteCommand,
   basicPaletteConfigCommand,
   basicPaletteResetCommand,
   colorCommand,
@@ -35,6 +36,68 @@ const NEIGHBOR_OFFSETS = [
   { dx: 0, dy: 1 },
   { dx: 0, dy: -1 },
 ];
+
+// --- 颜色→HSV 步数换算（与固件 controller.cpp 一致） ---
+
+interface HsvSteps {
+  hue: number;  // ZR 按键次数（色相距 hue=0 的步数），范围 0-200
+  sat: number;  // → 方向按键次数（饱和度距 sat=0 的步数），范围 0-213
+  val: number;  // ↓ 方向按键次数（明度距 val=1.0 的步数），范围 0-112
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const cleaned = hex.replace(/^#/u, "");
+  const value = Number.parseInt(cleaned, 16);
+
+  return {
+    r: (value >> 16) & 0xff,
+    g: (value >> 8) & 0xff,
+    b: value & 0xff,
+  };
+}
+
+function rgbToHsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+  const rf = r / 255;
+  const gf = g / 255;
+  const bf = b / 255;
+
+  const max = Math.max(rf, gf, bf);
+  const min = Math.min(rf, gf, bf);
+  const delta = max - min;
+
+  let h = 0;
+  if (delta > 0) {
+    if (max === rf) {
+      h = 60 * (((gf - bf) / delta) % 6);
+    } else if (max === gf) {
+      h = 60 * (((bf - rf) / delta) + 2);
+    } else {
+      h = 60 * (((rf - gf) / delta) + 4);
+    }
+  }
+
+  if (h < 0) h += 360;
+
+  const s = max <= 0 ? 0 : delta / max;
+  const v = max;
+
+  return { h, s, v };
+}
+
+/** hex → HSV → 固件编辑器中的步数坐标 */
+function hexToHsvSteps(hex: string): HsvSteps {
+  const { r, g, b } = hexToRgb(hex);
+  const { h, s, v } = rgbToHsv(r, g, b);
+
+  // 与固件 controller.cpp 的 rgbToHsv + scaleChannelToSteps 一致
+  const hueSteps = h <= 0 ? 0 : Math.round(((360 - h) / 360) * 200);
+  const satSteps = Math.round(s * 213);
+  const valSteps = Math.round((1 - v) * 112);
+
+  return { hue: hueSteps, sat: satSteps, val: valSteps };
+}
+
+// ---------------------------------
 
 function groupPixelsByColor(pixelMap: PixelMap): Map<number, Pixel[]> {
   const byColor = new Map<number, Pixel[]>();
@@ -795,86 +858,79 @@ export function generateScanlinePlan(
     }
   } else if (profile.colorMode === "palette") {
     const usedColors = getUsedPaletteColors(pixelMap);
+    let lastHsvSteps: HsvSteps | null = null;
 
-    for (let batchStart = 0; batchStart < usedColors.length; batchStart += PALETTE_SLOT_COUNT) {
-      const batch = usedColors.slice(batchStart, batchStart + PALETTE_SLOT_COUNT);
-      const batchPrefixCommands = batch.map((color, slotIndex) =>
-        paletteConfigCommand(slotIndex, color.colorHex),
-      );
-      let selectedSlot: number | null = null;
+    for (const color of usedColors) {
+      // 始终配置槽 0（当前选中色）
+      const isFirstColor = lastHsvSteps === null;
+      const targetSteps = hexToHsvSteps(color.colorHex);
+      let dHue = 0;
+      let dSat = 0;
+      let dVal = 0;
+      let prefixCommands: DrawCommand[];
 
-      commands.push(...batchPrefixCommands);
-
-      for (const [slotIndex, color] of batch.entries()) {
-        if (selectedSlot !== slotIndex) {
-          commands.push(colorCommand(slotIndex));
-          selectedSlot = slotIndex;
-        }
-
-        const orderedPixels = getOrderedPixelsForColor(pixelsByColor, color.colorIndex, current, profile, grid, pathStrategy);
-        current = appendResumeSegment(
-          commands,
-          resumeSegments,
-          orderedPixels,
-          current,
-          profile,
-          grid,
-          {
-            segmentIndex,
-            colorHex: color.colorHex,
-            slotIndex,
-            resumePrefixCommands: [...batchPrefixCommands.slice(slotIndex), colorCommand(slotIndex)],
-          },
-        );
-        segmentIndex += 1;
+      if (isFirstColor) {
+        // 第一色：走绝对调色（带归位）
+        commands.push(paletteConfigCommand(0, color.colorHex));
+        prefixCommands = [paletteConfigCommand(0, color.colorHex), colorCommand(0)];
+      } else {
+        // 后续色：计算相对增量
+        dHue = targetSteps.hue - lastHsvSteps!.hue;
+        dSat = targetSteps.sat - lastHsvSteps!.sat;
+        dVal = targetSteps.val - lastHsvSteps!.val;
+        commands.push(adjustPaletteCommand(0, dHue, dSat, dVal));
+        prefixCommands = [adjustPaletteCommand(0, dHue, dSat, dVal), colorCommand(0)];
       }
+
+      commands.push(colorCommand(0));
+      lastHsvSteps = targetSteps;
+
+      const orderedPixels = getOrderedPixelsForColor(pixelsByColor, color.colorIndex, current, profile, grid, pathStrategy);
+      current = appendResumeSegment(
+        commands,
+        resumeSegments,
+        orderedPixels,
+        current,
+        profile,
+        grid,
+        {
+          segmentIndex,
+          colorHex: color.colorHex,
+          slotIndex: 0,
+          resumePrefixCommands: prefixCommands,
+        },
+      );
+      segmentIndex += 1;
     }
   } else {
     const usedColors = getUsedPaletteColors(pixelMap);
-    let didResetOfficialPaletteState = false;
 
-    for (let batchStart = 0; batchStart < usedColors.length; batchStart += PALETTE_SLOT_COUNT) {
-      const batch = usedColors.slice(batchStart, batchStart + PALETTE_SLOT_COUNT);
-      const batchConfigCommands = batch.map((color, slotIndex) => {
-        const cell = officialPaletteCellFromIndex(color.colorIndex);
-        return basicPaletteConfigCommand(slotIndex, cell.row, cell.col);
-      });
-      let selectedSlot: number | null = null;
+    for (const color of usedColors) {
+      const cell = officialPaletteCellFromIndex(color.colorIndex);
 
-      if (!didResetOfficialPaletteState) {
-        commands.push(basicPaletteResetCommand());
-        didResetOfficialPaletteState = true;
-      }
+      // 始终配置槽 0（当前选中色）；已内置基本色 delta 追踪，无需归位
+      commands.push(basicPaletteConfigCommand(0, cell.row, cell.col));
+      commands.push(colorCommand(0));
 
-      commands.push(...batchConfigCommands);
-
-      for (const [slotIndex, color] of batch.entries()) {
-        if (selectedSlot !== slotIndex) {
-          commands.push(colorCommand(slotIndex));
-          selectedSlot = slotIndex;
-        }
-
-        const orderedPixels = getOrderedPixelsForColor(pixelsByColor, color.colorIndex, current, profile, grid, pathStrategy);
-        current = appendResumeSegment(
-          commands,
-          resumeSegments,
-          orderedPixels,
-          current,
-          profile,
-          grid,
-          {
-            segmentIndex,
-            colorHex: color.colorHex,
-            slotIndex,
-            resumePrefixCommands: [
-              basicPaletteResetCommand(),
-              ...batchConfigCommands.slice(slotIndex),
-              colorCommand(slotIndex),
-            ],
-          },
-        );
-        segmentIndex += 1;
-      }
+      const orderedPixels = getOrderedPixelsForColor(pixelsByColor, color.colorIndex, current, profile, grid, pathStrategy);
+      current = appendResumeSegment(
+        commands,
+        resumeSegments,
+        orderedPixels,
+        current,
+        profile,
+        grid,
+        {
+          segmentIndex,
+          colorHex: color.colorHex,
+          slotIndex: 0,
+          resumePrefixCommands: [
+            basicPaletteConfigCommand(0, cell.row, cell.col),
+            colorCommand(0),
+          ],
+        },
+      );
+      segmentIndex += 1;
     }
   }
 
@@ -936,6 +992,10 @@ export function estimateRuntimeMs(commands: DrawCommand[], profile: DrawingProfi
         return total + profile.colorChangeDuration * 6;
       case "basicPaletteConfig":
         return total + profile.colorChangeDuration * 4;
+      case "adjustPalette": {
+        const stepCount = Math.abs(command.dHue) + Math.abs(command.dSat) + Math.abs(command.dVal);
+        return total + stepCount * (timing.buttonPressMs + timing.inputDelayMs) + timing.inputDelayMs * 3;
+      }
       case "basicPaletteReset":
         return total + timing.inputDelayMs;
       case "wait":

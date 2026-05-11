@@ -23,6 +23,7 @@ class SwitchController {
   bool selectColor(int index);
   void resetBasicPaletteTracking();
   bool configurePaletteSlot(int index, uint8_t red, uint8_t green, uint8_t blue);
+  bool adjustPaletteSlot(int slot, int dHue, int dSat, int dVal);
   bool configureBasicPaletteSlot(int index, uint8_t row, uint8_t col);
   bool resetBluetooth(bool reconnectLastPeer = false);
   void pause();

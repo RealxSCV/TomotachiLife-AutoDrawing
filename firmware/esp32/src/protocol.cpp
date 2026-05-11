@@ -144,6 +144,28 @@ bool parseBasicColorConfigCommand(const String &line, int &slotIndex, int &row, 
 
 bool isBasicColorResetCommand(const String &line) { return line == "BC RESET"; }
 
+bool parseAdjustPaletteCommand(const String &line, int &slotIndex, int &dHue, int &dSat, int &dVal) {
+  if (!line.startsWith("ADJ ")) {
+    return false;
+  }
+
+  const String rest = line.substring(4);  // 跳过 "ADJ "
+  const int firstSpace = rest.indexOf(' ');
+  if (firstSpace < 0) return false;
+
+  const int secondSpace = rest.indexOf(' ', firstSpace + 1);
+  if (secondSpace < 0) return false;
+
+  const int thirdSpace = rest.indexOf(' ', secondSpace + 1);
+  if (thirdSpace < 0) return false;
+
+  slotIndex = rest.substring(0, firstSpace).toInt();
+  dHue = rest.substring(firstSpace + 1, secondSpace).toInt();
+  dSat = rest.substring(secondSpace + 1, thirdSpace).toInt();
+  dVal = rest.substring(thirdSpace + 1).toInt();
+  return true;
+}
+
 bool parseStickCommand(const String &line, int &x, int &y, uint16_t &holdMs) {
   if (!line.startsWith("STICK ")) {
     return false;
@@ -562,6 +584,21 @@ bool executeCommand(const String &line, SwitchController &controller, String &er
         paletteRed,
         paletteGreen,
         paletteBlue);
+    return true;
+  }
+
+  int adjSlot = 0;
+  int adjDHue = 0;
+  int adjDSat = 0;
+  int adjDVal = 0;
+
+  if (parseAdjustPaletteCommand(line, adjSlot, adjDHue, adjDSat, adjDVal)) {
+    if (!controller.adjustPaletteSlot(adjSlot, adjDHue, adjDSat, adjDVal)) {
+      return failControllerInput(error);
+    }
+    Serial.printf(
+        "INFO action=adjust-palette slot=%d dh=%d ds=%d dv=%d\n",
+        adjSlot, adjDHue, adjDSat, adjDVal);
     return true;
   }
 

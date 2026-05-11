@@ -104,7 +104,7 @@ test("mono resume segments keep the first draw command when the segment already 
   assert.equal(segment.commandEndExclusive, 2);
 });
 
-test("official and palette resume segments rebuild only unfinished color slots", () => {
+test("official and palette resume segments use per-color on-demand config", () => {
   const profile = makeProfile({
     canvasWidth: 9,
     canvasHeight: 1,
@@ -122,19 +122,18 @@ test("official and palette resume segments rebuild only unfinished color slots",
   const officialSegments = officialPlan.resumePlan.segments;
 
   assert.equal(officialSegments.length, 3);
-  assert.equal(officialSegments[0]?.resumePrefixCommands[0], "BC RESET");
-  assert.equal(officialSegments[1]?.resumePrefixCommands[0], "BC RESET");
-  assert.match(officialSegments[1]?.resumePrefixCommands[1] ?? "", /^BC 1 /u);
-  assert.match(officialSegments[1]?.resumePrefixCommands[2] ?? "", /^BC 2 /u);
-  assert.equal(
-    officialSegments[1]?.resumePrefixCommands.some((command) => /^BC 0 /u.test(command)),
-    false,
-  );
-  assert.equal(
-    officialSegments[1]?.resumePrefixCommands[officialSegments[1].resumePrefixCommands.length - 1],
-    "C 1",
-  );
+
+  // 官方色模式：每色的前缀仅为 BC 0 row col + C 0，无批次 reset
+  for (const segment of officialSegments) {
+    assert.match(segment.resumePrefixCommands[0] ?? "", /^BC 0 [0-7] [0-9]+$/u);
+    assert.equal(segment.resumePrefixCommands[1], "C 0");
+    assert.equal(segment.resumePrefixCommands.length, 2);
+  }
+
+  // 每个 segment 的 body 起始位置要指向绘制命令（P 或 L）
+  assert.equal(officialCommands[officialSegments[0]?.bodyStartCommandIndex ?? 0], "P");
   assert.equal(officialCommands[officialSegments[1]?.bodyStartCommandIndex ?? 0], "P");
+  assert.equal(officialCommands[officialSegments[2]?.bodyStartCommandIndex ?? 0], "P");
 
   const paletteProfile = makeProfile({
     canvasWidth: 9,
@@ -146,18 +145,18 @@ test("official and palette resume segments rebuild only unfinished color slots",
   const palettePlan = generateScanlinePlan(pixelMap, paletteProfile);
   const paletteSegments = palettePlan.resumePlan.segments;
 
+  // 自定义色模式：第一色用 PC 0 hex（绝对），后续用 ADJ 0 delta（相对）
   assert.match(paletteSegments[0]?.resumePrefixCommands[0] ?? "", /^PC 0 /u);
-  assert.match(paletteSegments[0]?.resumePrefixCommands[1] ?? "", /^PC 1 /u);
-  assert.match(paletteSegments[1]?.resumePrefixCommands[0] ?? "", /^PC 1 /u);
-  assert.match(paletteSegments[1]?.resumePrefixCommands[1] ?? "", /^PC 2 /u);
-  assert.equal(
-    paletteSegments[1]?.resumePrefixCommands.some((command) => /^PC 0 /u.test(command)),
-    false,
-  );
-  assert.equal(
-    paletteSegments[1]?.resumePrefixCommands[paletteSegments[1].resumePrefixCommands.length - 1],
-    "C 1",
-  );
+  assert.equal(paletteSegments[0]?.resumePrefixCommands[1], "C 0");
+  assert.equal(paletteSegments[0]?.resumePrefixCommands.length, 2);
+
+  assert.match(paletteSegments[1]?.resumePrefixCommands[0] ?? "", /^ADJ 0 /u);
+  assert.equal(paletteSegments[1]?.resumePrefixCommands[1], "C 0");
+  assert.equal(paletteSegments[1]?.resumePrefixCommands.length, 2);
+
+  assert.match(paletteSegments[2]?.resumePrefixCommands[0] ?? "", /^ADJ 0 /u);
+  assert.equal(paletteSegments[2]?.resumePrefixCommands[1], "C 0");
+  assert.equal(paletteSegments[2]?.resumePrefixCommands.length, 2);
 });
 
 test("recovery execution plan redraws the current failed color segment and still reaches the original total", async () => {
