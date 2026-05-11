@@ -337,10 +337,19 @@ function inspectPlatformIoPythonDependencies(
 }
 
 function isPlatformIoPythonCompatibilityReady(status: PlatformIoPythonDependencyStatus | null): boolean {
+  if (!status || status.missingModules.length > 0) {
+    return false;
+  }
+
+  if (!status.pyparsingVersion) {
+    return false;
+  }
+
+  const major = Number.parseInt(status.pyparsingVersion.split(".")[0] ?? "", 10);
+  // 接受 2.2.0（旧 Python）或 >= 3.0（较新 Python）
   return (
-    status !== null &&
-    status.missingModules.length === 0 &&
-    status.pyparsingVersion === PLATFORMIO_REQUIRED_PYPARSING_VERSION
+    status.pyparsingVersion === PLATFORMIO_REQUIRED_PYPARSING_VERSION ||
+    (Number.isFinite(major) && major >= 3)
   );
 }
 
@@ -353,8 +362,14 @@ function formatPlatformIoPythonDependencyStatus(status: PlatformIoPythonDependen
   if (status.missingModules.length > 0) {
     details.push(`missing=${status.missingModules.join(",")}`);
   }
-  if (status.pyparsingVersion !== PLATFORMIO_REQUIRED_PYPARSING_VERSION) {
-    details.push(`pyparsing=${status.pyparsingVersion ?? "missing"}`);
+  if (
+    status.pyparsingVersion &&
+    status.pyparsingVersion !== PLATFORMIO_REQUIRED_PYPARSING_VERSION
+  ) {
+    const major = Number.parseInt(status.pyparsingVersion.split(".")[0] ?? "", 10);
+    if (!Number.isFinite(major) || major < 3) {
+      details.push(`pyparsing=${status.pyparsingVersion ?? "missing"}`);
+    }
   }
 
   return details.join(" ") || "ready";
