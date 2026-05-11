@@ -1,4 +1,5 @@
 import { parseSequencedFrame, type SequencedFrame } from "../protocol/sequencing.js";
+import { getLineCommandMetrics } from "../protocol/lineMetrics.js";
 import { DEFAULT_SAFE_INPUT_TIMING, parseInputConfigCommand, type InputTiming } from "../protocol/timing.js";
 
 function parseTwoInts(line: string): { first: number; second: number } | null {
@@ -303,14 +304,10 @@ export class SimulatedDevice {
         return this.cacheAndReturn(frame, this.makeError(frame, "invalid line"), lines);
       }
 
-      const steps = Math.abs(parsed.dx) + Math.abs(parsed.dy);
-      this.state.drawCount += 1;
+      const metrics = getLineCommandMetrics(parsed.dx, parsed.dy, parsed.stride);
       this.state.x += parsed.dx;
       this.state.y += parsed.dy;
-      this.state.drawCount +=
-        parsed.stride > 1 && steps % parsed.stride === 0
-          ? steps / parsed.stride
-          : steps;
+      this.state.drawCount += metrics.drawCount;
       await delay(options.ackDelayMs);
       return this.cacheAndReturn(frame, this.makeAck(frame), lines);
     }

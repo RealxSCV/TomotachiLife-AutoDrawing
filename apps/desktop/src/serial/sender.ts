@@ -1,8 +1,8 @@
 import { ReadlineParser } from "@serialport/parser-readline";
 import { SerialPort } from "serialport";
 
-import { estimateSquareBrushStrideMoveHoldMs } from "../brushBehavior.js";
 import { preferSerialPath } from "./listPorts.js";
+import { getLineCommandMetrics } from "../protocol/lineMetrics.js";
 import {
   createSessionId,
   formatSequencedCommand,
@@ -447,27 +447,12 @@ export function getAckTimeoutForCommand(
 
     const dx = Number.parseInt(match[1], 10);
     const dy = Number.parseInt(match[2], 10);
-    const steps = Math.abs(dx) + Math.abs(dy);
     const stride = match[3] === undefined ? 1 : Number.parseInt(match[3], 10);
-
-    if (!Number.isFinite(stride) || stride <= 1 || steps % stride !== 0) {
-      return Math.max(
-        baseTimeoutMs,
-        1_000 + (steps + 1) * (timing.buttonPressMs + timing.inputDelayMs),
-      );
-    }
-
-    const logicalSteps = steps / stride;
-    const moveHoldMs = estimateSquareBrushStrideMoveHoldMs(stride, {
-      buttonPressMs: timing.buttonPressMs,
-      homeMs: timing.homeMs,
-    });
+    const metrics = getLineCommandMetrics(dx, dy, stride);
 
     return Math.max(
       baseTimeoutMs,
-      1_000 +
-        (timing.buttonPressMs + timing.inputDelayMs) +
-        logicalSteps * (moveHoldMs + timing.inputDelayMs + timing.buttonPressMs + timing.inputDelayMs),
+      1_000 + metrics.actionCount * (timing.buttonPressMs + timing.inputDelayMs),
     );
   }
 

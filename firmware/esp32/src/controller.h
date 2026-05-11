@@ -42,6 +42,5 @@ class SwitchController {
   uint16_t inputDelayMs_ = INPUT_DELAY_MS;
   uint16_t homeMs_ = HOME_DURATION_MS;
 
-  uint16_t estimateStrideMoveHoldMs(uint8_t stride) const;
   void waitUntilReady() const;
 };

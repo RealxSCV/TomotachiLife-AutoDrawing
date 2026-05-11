@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { calculatePathStats } from "../src/app/generateDrawPlan.js";
 import { estimateRuntimeMs, generateScanlinePlan } from "../src/path/scanline.js";
+import type { DrawCommand } from "../src/protocol/commands.js";
 import { serializeCommands } from "../src/protocol/serializer.js";
 import type { DrawingProfile, Pixel, PixelMap } from "../src/types.js";
 
@@ -148,11 +149,15 @@ test("square large brushes emit stride-aware line runs for contiguous rows", () 
   const plan = generateScanlinePlan(pixelMap, profile, "scanline");
   const serialized = serializeCommands(plan.commands);
   const strideLine = plan.commands.find((command) => command.type === "line");
+  const equivalentDiscreteSequence: DrawCommand[] = [
+    { type: "draw", button: "A" },
+    { type: "move", dx: 3, dy: 0 },
+    { type: "draw", button: "A" },
+    { type: "move", dx: 3, dy: 0 },
+    { type: "draw", button: "A" },
+  ];
 
   assert.ok(serialized.includes("L 6 0 3"));
   assert.ok(strideLine && strideLine.type === "line");
-  assert.ok(
-    estimateRuntimeMs([strideLine], profile) < estimateRuntimeMs([{ type: "line", dx: 6, dy: 0 }], profile),
-    "expected stride-aware runs to estimate faster than per-pixel line stepping",
-  );
+  assert.equal(estimateRuntimeMs([strideLine], profile), estimateRuntimeMs(equivalentDiscreteSequence, profile));
 });

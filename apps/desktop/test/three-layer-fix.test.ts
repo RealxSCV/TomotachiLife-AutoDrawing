@@ -399,9 +399,15 @@ test("dynamic timeouts follow CFG INPUT timing", () => {
   assert.equal(getAckTimeoutForCommand("CFG INPUT 100 100 1800", 500, timing), 500);
   assert.equal(getAckTimeoutForCommand("M 3 0", 500, timing), 1600);
   assert.equal(getAckTimeoutForCommand("L 3 0", 500, timing), 1800);
-  assert.equal(getAckTimeoutForCommand("L 6 0 3", 500, timing), 2056);
+  assert.equal(getAckTimeoutForCommand("L 6 0 3", 500, timing), 2800);
   assert.equal(getAckTimeoutForCommand("W 3000", 500, timing), 4000);
   assert.equal(getAckTimeoutForCommand("H", 500, timing), 4700);
+});
+
+test("stride line timeouts account for discrete movement instead of long-hold jumps", () => {
+  const timing = { buttonPressMs: 65, inputDelayMs: 45, homeMs: 1800 };
+
+  assert.equal(getAckTimeoutForCommand("L -38 0 19", 500, timing), 5_510);
 });
 
 test("serial sender probes fresh ESP32 serial sessions before first sequenced command", async () => {
@@ -472,6 +478,20 @@ test("controller input report failures are not retried", async () => {
   );
 
   assert.equal(lines.some((line) => line.startsWith("WARN retry")), false);
+});
+
+test("simulated stride lines keep the endpoint but only add one draw per stride chunk", async () => {
+  const lines: string[] = [];
+  const sender = new SimulatedAckSender();
+
+  await sender.send(["L 6 0 3", "I"], {
+    ackTimeoutMs: 5_000,
+    retries: 0,
+    ackDelayMs: 0,
+    onDeviceLine: (line) => lines.push(line),
+  });
+
+  assert.match(lines.at(-1) ?? "", /INFO transport=simulated-device x=6 y=0 color=0 draws=3$/u);
 });
 
 test("congested controller send-report warnings are recognized as execution-fatal", () => {

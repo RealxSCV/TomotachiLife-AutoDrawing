@@ -1,8 +1,5 @@
 import type { DrawingProfile, Pixel, PixelMap, ResumePlan, ResumeSegment } from "../types.js";
-import {
-  buildAutomaticBrushSetupCommands,
-  estimateSquareBrushStrideMoveHoldMs,
-} from "../brushBehavior.js";
+import { buildAutomaticBrushSetupCommands } from "../brushBehavior.js";
 import {
   createBrushGrid,
   gridCellToCanvasCenter,
@@ -22,6 +19,7 @@ import {
   paletteConfigCommand,
   type DrawCommand,
 } from "../protocol/commands.js";
+import { getLineCommandMetrics } from "../protocol/lineMetrics.js";
 import { serializeCommand, serializeCommands } from "../protocol/serializer.js";
 
 export type PathStrategy = "scanline" | "nearest";
@@ -919,36 +917,10 @@ export function estimateRuntimeMs(commands: DrawCommand[], profile: DrawingProfi
             (timing.buttonPressMs + timing.inputDelayMs)
         );
       case "line":
-        if (!command.stride || command.stride <= 1) {
-          return (
-            total +
-            (Math.abs(command.dx) + Math.abs(command.dy) + 1) *
-              (timing.buttonPressMs + timing.inputDelayMs)
-          );
-        }
-
         {
-          const steps = Math.abs(command.dx) + Math.abs(command.dy);
+          const metrics = getLineCommandMetrics(command.dx, command.dy, command.stride ?? 1);
 
-          if (steps === 0 || steps % command.stride !== 0) {
-            return (
-              total +
-              (steps + 1) * (timing.buttonPressMs + timing.inputDelayMs)
-            );
-          }
-
-          const logicalSteps = steps / command.stride;
-          const moveHoldMs = estimateSquareBrushStrideMoveHoldMs(command.stride, {
-            buttonPressMs: timing.buttonPressMs,
-            homeMs: timing.homeMs,
-          });
-
-          return (
-            total +
-            (timing.buttonPressMs + timing.inputDelayMs) +
-            logicalSteps *
-              (moveHoldMs + timing.inputDelayMs + timing.buttonPressMs + timing.inputDelayMs)
-          );
+          return total + metrics.actionCount * (timing.buttonPressMs + timing.inputDelayMs);
         }
       case "draw":
       case "press":

@@ -1,7 +1,6 @@
 import { moveCommand, pressButtonCommand, waitCommand, type DrawCommand } from "./protocol/commands.js";
 import type { BrushShape, BrushSize, DrawingProfile } from "./types.js";
 
-const HOME_CALIBRATION_PIXELS = 128;
 const BRUSH_PICKER_EXIT_SETTLE_MS = 3_000;
 const DEFAULT_BRUSH_SELECTOR_COLUMN = 2;
 const DEFAULT_BRUSH_SELECTOR_ROW = 0;
@@ -51,24 +50,6 @@ export function getUnsupportedBrushShapeMessageForProfile(
   profile: Pick<DrawingProfile, "brushShape" | "brushSize">,
 ): string | null {
   return getUnsupportedBrushShapeMessage(profile.brushShape, profile.brushSize);
-}
-
-export function estimateSquareBrushStrideMoveHoldMs(
-  stride: number,
-  timing: {
-    buttonPressMs: number;
-    homeMs: number;
-  },
-): number {
-  if (!Number.isFinite(stride) || stride <= 1) {
-    return Math.max(1, Math.round(timing.buttonPressMs));
-  }
-
-  const normalizedStride = Math.max(1, Math.round(stride));
-  const buttonPressMs = Math.max(1, Math.round(timing.buttonPressMs));
-  const perPixelHomeMs = Math.max(1, Math.floor(Math.max(1, timing.homeMs) / HOME_CALIBRATION_PIXELS));
-
-  return buttonPressMs + perPixelHomeMs * (normalizedStride - 1);
 }
 
 export function buildAutomaticBrushSetupCommands(
