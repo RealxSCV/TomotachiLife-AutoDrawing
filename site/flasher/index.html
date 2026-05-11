@@ -49,8 +49,13 @@
           <section class="panel">
             <div class="panel-head">
               <h2>固件版本</h2>
-              <p>这里展示当前站点提供的主线固件发布信息。</p>
+              <p>这里展示当前站点提供的固件发布信息，可在标准 Switch 与 Switch Lite 模式间切换。</p>
             </div>
+            <div class="field-row">
+              <label for="firmware-switch-model">目标机型</label>
+              <select id="firmware-switch-model"></select>
+            </div>
+            <p id="firmware-switch-model-description" class="field-help"></p>
             <dl class="meta-list">
               <div class="meta-row">
                 <dt>Version</dt>
@@ -62,7 +67,7 @@
               </div>
               <div class="meta-row">
                 <dt>Manifest</dt>
-                <dd>./firmware/manifest.json</dd>
+                <dd id="firmware-manifest-path">./firmware/manifest.json</dd>
               </div>
             </dl>
             <div>
