@@ -575,9 +575,8 @@ export class FirmwareToolingManager {
           "install",
           "--disable-pip-version-check",
           "--no-input",
-          "--upgrade",
           ...PLATFORMIO_REQUIRED_PIP_PACKAGES,
-          "pyparsing>=3.0.0",
+          "pyparsing==2.3.1",
         ],
         options.onLine
           ? {
