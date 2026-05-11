@@ -1,5 +1,8 @@
 import type { DrawingProfile, Pixel, PixelMap, ResumePlan, ResumeSegment } from "../types.js";
-import { estimateSquareBrushStrideMoveHoldMs } from "../brushBehavior.js";
+import {
+  buildAutomaticBrushSetupCommands,
+  estimateSquareBrushStrideMoveHoldMs,
+} from "../brushBehavior.js";
 import {
   createBrushGrid,
   gridCellToCanvasCenter,
@@ -721,6 +724,7 @@ export function generateScanlinePlan(
   const commands: DrawCommand[] = [];
   const grid = createBrushGrid(profile);
   const resumeSegments: ResumeSegment[] = [];
+  const brushSetupCommands = buildAutomaticBrushSetupCommands(profile);
   let current = { x: 0, y: 0 };
   let segmentIndex = 0;
 
@@ -730,6 +734,7 @@ export function generateScanlinePlan(
     profile.homeDuration,
   );
   commands.push(inputConfig);
+  commands.push(...brushSetupCommands);
 
   if (shouldStartFromCanvasCenter(profile)) {
     current = {
@@ -772,7 +777,10 @@ export function generateScanlinePlan(
           segmentIndex,
           colorHex: orderedPixels[0]?.colorHex ?? null,
           slotIndex: null,
-          resumePrefixCommands: profile.startColorIndex === 0 ? [] : [colorCommand(profile.startColorIndex)],
+          resumePrefixCommands: [
+            ...brushSetupCommands,
+            ...(profile.startColorIndex === 0 ? [] : [colorCommand(profile.startColorIndex)]),
+          ],
         },
       );
       segmentIndex += 1;
@@ -807,7 +815,11 @@ export function generateScanlinePlan(
             segmentIndex,
             colorHex: color.colorHex,
             slotIndex,
-            resumePrefixCommands: [...batchPrefixCommands.slice(slotIndex), colorCommand(slotIndex)],
+            resumePrefixCommands: [
+              ...brushSetupCommands,
+              ...batchPrefixCommands.slice(slotIndex),
+              colorCommand(slotIndex),
+            ],
           },
         );
         segmentIndex += 1;
@@ -851,6 +863,7 @@ export function generateScanlinePlan(
             colorHex: color.colorHex,
             slotIndex,
             resumePrefixCommands: [
+              ...brushSetupCommands,
               basicPaletteResetCommand(),
               ...batchConfigCommands.slice(slotIndex),
               colorCommand(slotIndex),

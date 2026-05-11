@@ -232,6 +232,7 @@ const els = {
   sizeSelect: document.getElementById("size-select"),
   brushSizeSelect: document.getElementById("brush-size-select"),
   brushShapeSelect: document.getElementById("brush-shape-select"),
+  brushOptionButtons: [...document.querySelectorAll("[data-brush-size-option][data-brush-shape-option]")],
   templateCategorySelect: document.getElementById("template-category-select"),
   templateSelect: document.getElementById("template-select"),
   templatePreviewImage: document.getElementById("template-preview-image"),
@@ -482,6 +483,13 @@ function isRoundLargeBrushSelection(brushShape, brushSize) {
   return normalizeBrushShapeValue(brushShape) === "round" && Number(brushSize) > 1;
 }
 
+function setStudioBrushSelection(brushShape, brushSize) {
+  state.studio.brushShape = normalizeBrushShapeValue(brushShape);
+  state.studio.brushSize = Number(brushSize);
+  syncStudioUi();
+  scheduleStudioPreviewRefresh();
+}
+
 function buildCurrentStudioProfileSummary() {
   return {
     brushSize: state.studio.brushSize,
@@ -539,6 +547,14 @@ els.brushShapeSelect.addEventListener("change", () => {
   state.studio.brushShape = normalizeBrushShapeValue(els.brushShapeSelect.value);
   syncStudioUi();
   scheduleStudioPreviewRefresh();
+});
+
+els.brushOptionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const brushShape = button.dataset.brushShapeOption ?? "square";
+    const brushSize = Number(button.dataset.brushSizeOption ?? state.studio.brushSize);
+    setStudioBrushSelection(brushShape, brushSize);
+  });
 });
 
 els.templateCategorySelect.addEventListener("change", () => {
@@ -2382,7 +2398,7 @@ async function resumeRecoverySession(sessionId) {
   }
 
   const shouldResume = window.confirm(
-    "请确认：你已经先在 Switch 里保存当前画作，并且已经手动重新进入绘画页；当前笔刷大小与保存任务一致，页面也回到了默认进入状态。现在开始从恢复点继续吗？",
+    "请确认：你已经先在 Switch 里保存当前画作，并且已经手动重新进入绘画页；从这里开始不要再手动改笔刷，也不要再移动页面。现在开始从恢复点继续吗？",
   );
 
   if (!shouldResume) {
@@ -3025,11 +3041,22 @@ function syncStudioUi() {
     generatedProfile.brushSize,
   );
   const selectedBrushShapeLabel =
-    normalizeBrushShapeValue(state.studio.brushShape) === "round" ? "圆形笔刷" : "方形笔刷";
+    normalizeBrushShapeValue(state.studio.brushShape) === "round" ? "圆形像素笔刷" : "方块像素笔刷";
+  const selectedBrushPresetLabel = `${state.studio.brushSize} 像素${selectedBrushShapeLabel}`;
 
   els.sizeSelect.value = String(state.studio.canvasSize);
   els.brushSizeSelect.value = String(state.studio.brushSize);
   els.brushShapeSelect.value = normalizeBrushShapeValue(state.studio.brushShape);
+  els.brushOptionButtons.forEach((button) => {
+    const buttonBrushShape = normalizeBrushShapeValue(button.dataset.brushShapeOption);
+    const buttonBrushSize = Number(button.dataset.brushSizeOption ?? 0);
+    const isSelected =
+      buttonBrushShape === normalizeBrushShapeValue(state.studio.brushShape) &&
+      buttonBrushSize === Number(state.studio.brushSize);
+    button.classList.toggle("active", isSelected);
+    button.disabled = state.studio.busy || executionActive;
+    button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  });
   syncStudioTemplateOptions();
   els.templateCategorySelect.value = state.studio.templateCategory;
   els.templateSelect.value = state.studio.templateId;
@@ -3051,10 +3078,10 @@ function syncStudioUi() {
     : "当前不会自动扣背景；如果素材是白底或棋盘格假透明图，建议开启。";
   const brushShapeHint =
     normalizeBrushShapeValue(state.studio.brushShape) === "square"
-      ? "当前按方形笔刷规划；开始前也请把 Switch 里的笔刷切到方形笔刷。"
+      ? `当前预设是 ${selectedBrushPresetLabel}；开始绘制时设备会先按 X、X 进入笔刷页，再从默认的 7 像素圆点笔刷自动切到这个方块像素笔刷。进入绘画页后不要再手动改笔刷，也不要再移动页面。`
       : state.studio.brushSize === 1
-        ? "当前选的是 1 号圆形笔刷；这一档仍可按单点模式继续生成和执行。"
-        : `当前选的是 ${state.studio.brushSize} 号圆形笔刷；这一档暂不支持生成或执行，请切回方形笔刷或使用 1 号笔。`;
+        ? "当前预设是 1 像素圆形像素笔刷；开始绘制时设备会自动打开笔刷页并切换到这一档。"
+        : `当前选的是 ${state.studio.brushSize} 号圆形像素笔刷；这一档暂不支持生成或执行，请切回方块像素笔刷或使用 1 号笔。`;
   const templateHint =
     state.studio.templateId === "none"
       ? "当前使用正方形画布，不会额外裁掉模板外区域。"
@@ -3068,12 +3095,12 @@ function syncStudioUi() {
     els.studioModeHint.textContent =
       unsupportedSelectedBrush
         ? `${brushShapeHint}${templateHint}${scaleHint}${positionHint}${backgroundHint}`
-        : `深色像素会绘制，浅色像素会保留为空白背景。当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再放进 256x256 脚本坐标画布，并按 ${state.studio.brushSize} 号笔和画布中心起步生成。${templateHint}${scaleHint}${positionHint}${brushShapeHint}${backgroundHint}`;
+        : `深色像素会绘制，浅色像素会保留为空白背景。当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再放进 256x256 脚本坐标画布，并按 ${selectedBrushPresetLabel}和画布中心起步生成脚本。${templateHint}${scaleHint}${positionHint}${brushShapeHint}${backgroundHint}`;
   } else if (state.studio.colorMode === "official") {
     els.studioModeHint.textContent =
       unsupportedSelectedBrush
         ? `${brushShapeHint}${templateHint}${scaleHint}${positionHint}${backgroundHint}`
-        : `当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再把图片压到 ${state.studio.colorCount} 个官方色以内，并映射到游戏内置的 7x12 官方色盘，再按 ${state.studio.brushSize} 号笔生成。${templateHint}${scaleHint}${positionHint}开始前请保持右侧 9 个槽位默认颜色不变。${brushShapeHint}${backgroundHint}`;
+        : `当前会先按 ${state.studio.imageScalePercent}% 调整图片大小，再把图片压到 ${state.studio.colorCount} 个官方色以内，并映射到游戏内置的 7x12 官方色盘，再按 ${selectedBrushPresetLabel}生成。${templateHint}${scaleHint}${positionHint}开始前请保持右侧 9 个槽位默认颜色不变。${brushShapeHint}${backgroundHint}`;
   } else {
     els.studioModeHint.textContent =
       unsupportedSelectedBrush
@@ -3145,8 +3172,8 @@ function syncStudioUi() {
   if (unsupportedSelectedBrush) {
     els.executionHint.textContent =
       state.commands.length > 0 && !unsupportedGeneratedBrush
-        ? `当前控件已切到 ${state.studio.brushSize} 号${selectedBrushShapeLabel}，这一档暂不支持重新生成；你仍可以执行上一次按 ${generatedProfile.brushSize} 号${generatedProfile.brushShape === "round" ? "圆形笔刷" : "方形笔刷"}生成的脚本。`
-        : `当前选的是 ${state.studio.brushSize} 号${selectedBrushShapeLabel}，这一档暂不支持生成或执行。请切回方形笔刷，或改用 1 号圆形笔刷。`;
+        ? `当前控件已切到 ${state.studio.brushSize} 号${selectedBrushShapeLabel}，这一档暂不支持重新生成；你仍可以执行上一次按 ${generatedProfile.brushSize} 号${generatedProfile.brushShape === "round" ? "圆形像素笔刷" : "方块像素笔刷"}生成的脚本。`
+        : `当前选的是 ${state.studio.brushSize} 号${selectedBrushShapeLabel}，这一档暂不支持生成或执行。请切回方块像素笔刷，或改用 1 号圆形像素笔刷。`;
     renderStudioConnectionStatus();
     return;
   }
@@ -3173,10 +3200,10 @@ function syncStudioUi() {
 
   els.executionHint.textContent =
     state.studio.colorMode === "mono"
-      ? `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 黑白脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。由 ESP32 从画布中心起步，按 ${generatedProfile.brushSize} 号${generatedProfile.brushShape === "round" ? "圆形笔刷" : "方形笔刷"}继续翻译成方向键移动与 A 绘制。`
+      ? `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 黑白脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。开始后 ESP32 会先按 X、X 打开笔刷页，从默认的 7 像素圆点笔刷自动切到 ${generatedProfile.brushSize} 像素${generatedProfile.brushShape === "round" ? "圆形像素笔刷" : "方块像素笔刷"}，再从画布中心继续翻译成方向键移动与 A 绘制。`
       : generatedProfile.colorMode === "official"
-        ? `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 官方色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。请先保持右侧 9 个槽位默认颜色不变，ESP32 会按这组默认槽位状态去配置内置 7x12 色盘，并按 ${generatedProfile.brushSize} 号${generatedProfile.brushShape === "round" ? "圆形笔刷" : "方形笔刷"}绘制。`
-        : `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 自动量化多色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。ESP32 会分批把当前预览实际用到的颜色写入 9 个自定义槽位后再绘制；这条路线仍处于实验阶段，建议先从颜色较少、结构简单的图片开始。`;
+        ? `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 官方色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。请先保持右侧 9 个槽位默认颜色不变；开始后 ESP32 会先按 X、X 打开笔刷页，从默认的 7 像素圆点笔刷自动切到 ${generatedProfile.brushSize} 像素${generatedProfile.brushShape === "round" ? "圆形像素笔刷" : "方块像素笔刷"}，再按这组默认槽位状态去配置内置 7x12 色盘并继续绘制。`
+        : `当前会把按 ${generatedProfile.imageScalePercent}% 缩放、${describeImagePosition(generatedProfile.imageOffsetXPercent, generatedProfile.imageOffsetYPercent, false)}后的 256x256 自动量化多色脚本通过串口发送到 ${state.selectedPortPath}，模板为“${generatedProfile.templateLabel}”。开始后 ESP32 也会先按 X、X 打开笔刷页，从默认的 7 像素圆点笔刷自动切到 ${generatedProfile.brushSize} 像素${generatedProfile.brushShape === "round" ? "圆形像素笔刷" : "方块像素笔刷"}；随后它会分批把当前预览实际用到的颜色写入 9 个自定义槽位后再绘制，这条路线仍处于实验阶段，建议先从颜色较少、结构简单的图片开始。`;
   renderStudioConnectionStatus();
 }
 

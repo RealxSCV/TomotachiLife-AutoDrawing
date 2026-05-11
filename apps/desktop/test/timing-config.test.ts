@@ -82,6 +82,7 @@ test("scanline and recovery plans preserve profile timing in CFG INPUT", () => {
     inputDelay: 170,
     buttonPressDuration: 65,
     homeDuration: 2400,
+    brushSize: 3,
   });
   const pixelMap = makePixelMap(5, 1, [{ x: 2, y: 0 }]);
   const scanlinePlan = generateScanlinePlan(pixelMap, profile);
@@ -93,8 +94,10 @@ test("scanline and recovery plans preserve profile timing in CFG INPUT", () => {
   });
 
   assert.equal(commands[0], "CFG INPUT 65 170 2400");
+  assert.deepEqual(commands.slice(1, 5), ["BTN X", "BTN X", "M -1 1", "BTN A"]);
   assert.equal(scanlinePlan.resumePlan.inputConfigCommand, "CFG INPUT 65 170 2400");
   assert.equal(recoveryPlan.commands[0], "CFG INPUT 65 170 2400");
+  assert.deepEqual(recoveryPlan.commands.slice(1, 5), ["BTN X", "BTN X", "M -1 1", "BTN A"]);
 });
 
 test("/api/generate echoes timing overrides into commands and estimated runtime", async (t) => {

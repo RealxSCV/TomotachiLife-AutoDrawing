@@ -36,6 +36,17 @@ function parseLineCommand(line: string): { dx: number; dy: number; stride: numbe
   return { dx, dy, stride };
 }
 
+function parseButtonCommand(line: string): string | null {
+  const parts = line.trim().split(/\s+/u);
+
+  if (parts.length !== 2 || parts[0] !== "BTN") {
+    return null;
+  }
+
+  const token = parts[1] ?? "";
+  return token.length > 0 ? token : null;
+}
+
 function parseOneInt(line: string): number | null {
   const parts = line.trim().split(/\s+/u);
 
@@ -326,6 +337,18 @@ export class SimulatedDevice {
       }
 
       await delay(waitMs + options.ackDelayMs);
+      return this.cacheAndReturn(frame, this.makeAck(frame), lines);
+    }
+
+    if (trimmed.startsWith("BTN ")) {
+      const button = parseButtonCommand(trimmed);
+
+      if (!button) {
+        await delay(options.ackDelayMs);
+        return this.cacheAndReturn(frame, this.makeError(frame, "invalid button"), lines);
+      }
+
+      await delay(options.ackDelayMs);
       return this.cacheAndReturn(frame, this.makeAck(frame), lines);
     }
 
