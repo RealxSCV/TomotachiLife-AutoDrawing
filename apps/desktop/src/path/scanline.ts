@@ -1,4 +1,5 @@
 import type { DrawingProfile, Pixel, PixelMap, ResumePlan, ResumeSegment } from "../types.js";
+import { buildAutomaticBrushSetupCommands } from "../brushBehavior.js";
 import {
   createBrushGrid,
   gridCellToCanvasCenter,
@@ -19,6 +20,7 @@ import {
   paletteConfigCommand,
   type DrawCommand,
 } from "../protocol/commands.js";
+import { getLineCommandMetrics } from "../protocol/lineMetrics.js";
 import { serializeCommand, serializeCommands } from "../protocol/serializer.js";
 
 export type PathStrategy = "scanline" | "nearest";
@@ -706,7 +708,15 @@ function appendPixelRun(
   } else {
     const firstPosition = toCanvasPosition(firstPixel, grid);
     const lastPosition = toCanvasPosition(lastPixel, grid);
-    commands.push(lineCommand(lastPosition.x - firstPosition.x, lastPosition.y - firstPosition.y));
+    const lineStride =
+      profile.brushShape === "square" && profile.brushSize > 1 ? profile.brushSize : 1;
+    commands.push(
+      lineCommand(
+        lastPosition.x - firstPosition.x,
+        lastPosition.y - firstPosition.y,
+        lineStride,
+      ),
+    );
   }
 
   return toCanvasPosition(lastPixel, grid);
@@ -800,6 +810,7 @@ export function generateScanlinePlan(
   const commands: DrawCommand[] = [];
   const grid = createBrushGrid(profile);
   const resumeSegments: ResumeSegment[] = [];
+  const brushSetupCommands = buildAutomaticBrushSetupCommands(profile);
   let current = { x: 0, y: 0 };
   let segmentIndex = 0;
 
@@ -809,6 +820,7 @@ export function generateScanlinePlan(
     profile.homeDuration,
   );
   commands.push(inputConfig);
+  commands.push(...brushSetupCommands);
 
   if (shouldStartFromCanvasCenter(profile)) {
     current = {
@@ -851,7 +863,10 @@ export function generateScanlinePlan(
           segmentIndex,
           colorHex: orderedPixels[0]?.colorHex ?? null,
           slotIndex: null,
-          resumePrefixCommands: profile.startColorIndex === 0 ? [] : [colorCommand(profile.startColorIndex)],
+          resumePrefixCommands: [
+            ...brushSetupCommands,
+            ...(profile.startColorIndex === 0 ? [] : [colorCommand(profile.startColorIndex)]),
+          ],
         },
       );
       segmentIndex += 1;
@@ -897,7 +912,10 @@ export function generateScanlinePlan(
           segmentIndex,
           colorHex: color.colorHex,
           slotIndex: 0,
-          resumePrefixCommands: prefixCommands,
+          resumePrefixCommands: [
+            ...brushSetupCommands,
+            ...prefixCommands,
+          ],
         },
       );
       segmentIndex += 1;
@@ -925,6 +943,7 @@ export function generateScanlinePlan(
           colorHex: color.colorHex,
           slotIndex: 0,
           resumePrefixCommands: [
+            ...brushSetupCommands,
             basicPaletteConfigCommand(0, cell.row, cell.col),
             colorCommand(0),
           ],
@@ -978,11 +997,11 @@ export function estimateRuntimeMs(commands: DrawCommand[], profile: DrawingProfi
             (timing.buttonPressMs + timing.inputDelayMs)
         );
       case "line":
-        return (
-          total +
-          (Math.abs(command.dx) + Math.abs(command.dy) + 1) *
-            (timing.buttonPressMs + timing.inputDelayMs)
-        );
+        {
+          const metrics = getLineCommandMetrics(command.dx, command.dy, command.stride ?? 1);
+
+          return total + metrics.actionCount * (timing.buttonPressMs + timing.inputDelayMs);
+        }
       case "draw":
       case "press":
         return total + timing.buttonPressMs + timing.inputDelayMs;
