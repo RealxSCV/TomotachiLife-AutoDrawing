@@ -2756,11 +2756,13 @@ function renderStudioExecutionStatus() {
 
   // 3. 修改：在文字提示里也加上 (XX%) 的显示
   switch (execution.status) {
-    case "running":
+    case "running": {
+      const remainingLabel = formatRemainingTime(execution.startedAt, percent);
       els.studioExecutionStatus.textContent = `绘制进行中 (${percent}%)：${execution.completedCommands} / ${execution.totalCommands}${
         execution.currentCommand ? ` · 当前命令 ${execution.currentCommand}` : ""
-      }`;
+      }${remainingLabel ? ` · 剩余 ${remainingLabel}` : ""}`;
       break;
+    }
     case "paused":
       els.studioExecutionStatus.textContent = `绘制已暂停 (${percent}%)：${execution.completedCommands} / ${execution.totalCommands}。如果你刚点了暂停，看到 Switch 还会把最后一条已发出的命令跑完，这是正常现象。`;
       break;
@@ -4045,6 +4047,25 @@ function formatApproxDuration(ms) {
   }
 
   return `约 ${(ms / 60_000).toFixed(1)} 分钟`;
+}
+
+/**
+ * 根据开始时间戳和当前百分比估算剩余时间。
+ * 返回格式化字符串，或在数据不足时返回空字符串。
+ */
+function formatRemainingTime(startedAt, percent) {
+  if (!Number.isFinite(startedAt) || percent <= 0) {
+    return "";
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+
+  if (elapsedMs <= 0) {
+    return "";
+  }
+
+  const remainingMs = (elapsedMs / percent) * (100 - percent);
+  return formatApproxDuration(remainingMs);
 }
 
 function formatTimingBenchmarkSummary(mode, timing) {
