@@ -14,7 +14,7 @@ const PLATFORMIO_INSTALLER_SHA256 = "068d5dca983b22ed36a00dea7d42e58b646f0ac4958
 const PLATFORMIO_INSTALLER_URL =
   `https://raw.githubusercontent.com/platformio/platformio-core-installer/${PLATFORMIO_INSTALLER_COMMIT}/get-platformio.py`;
 const MAX_INSTALL_LOG_LINES = 400;
-const PLATFORMIO_REQUIRED_PYPARSING_VERSION = "2.2.0";
+const PLATFORMIO_REQUIRED_PYPARSING_VERSION: string | null = null;
 const PLATFORMIO_REQUIRED_PIP_PACKAGES = [
   "idf-component-manager",
   "kconfiglib",
@@ -337,19 +337,11 @@ function inspectPlatformIoPythonDependencies(
 }
 
 function isPlatformIoPythonCompatibilityReady(status: PlatformIoPythonDependencyStatus | null): boolean {
-  if (!status || status.missingModules.length > 0) {
-    return false;
-  }
-
-  if (!status.pyparsingVersion) {
-    return false;
-  }
-
-  const major = Number.parseInt(status.pyparsingVersion.split(".")[0] ?? "", 10);
-  // 接受 2.2.0（旧 Python）或 >= 3.0（较新 Python）
   return (
-    status.pyparsingVersion === PLATFORMIO_REQUIRED_PYPARSING_VERSION ||
-    (Number.isFinite(major) && major >= 3)
+    status !== null &&
+    status.missingModules.length === 0 &&
+    status.pyparsingVersion !== null &&
+    status.pyparsingVersion !== undefined
   );
 }
 
@@ -361,15 +353,6 @@ function formatPlatformIoPythonDependencyStatus(status: PlatformIoPythonDependen
   const details: string[] = [];
   if (status.missingModules.length > 0) {
     details.push(`missing=${status.missingModules.join(",")}`);
-  }
-  if (
-    status.pyparsingVersion &&
-    status.pyparsingVersion !== PLATFORMIO_REQUIRED_PYPARSING_VERSION
-  ) {
-    const major = Number.parseInt(status.pyparsingVersion.split(".")[0] ?? "", 10);
-    if (!Number.isFinite(major) || major < 3) {
-      details.push(`pyparsing=${status.pyparsingVersion ?? "missing"}`);
-    }
   }
 
   return details.join(" ") || "ready";
@@ -594,7 +577,7 @@ export class FirmwareToolingManager {
           "--no-input",
           "--upgrade",
           ...PLATFORMIO_REQUIRED_PIP_PACKAGES,
-          `pyparsing==${PLATFORMIO_REQUIRED_PYPARSING_VERSION}`,
+          "pyparsing>=3.0.0",
         ],
         options.onLine
           ? {
