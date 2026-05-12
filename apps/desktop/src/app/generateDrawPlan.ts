@@ -74,8 +74,16 @@ export async function generateDrawPlan(
     // --- 修复版的计算逻辑 ---
     let lastColorCmdIndex = -1;
     // 倒着找最后一次切换颜色的指令
+    // palette 模式用 paletteConfig/adjustPalette，official 用 basicPaletteConfig，
+    // mono 用 color，统一识别所有颜色变更命令
     for (let i = drawCommands.length - 1; i >= 0; i--) {
-      if (drawCommands[i]?.type === 'color') {
+      const cmd = drawCommands[i];
+      if (
+        cmd?.type === 'color' ||
+        cmd?.type === 'paletteConfig' ||
+        cmd?.type === 'adjustPalette' ||
+        cmd?.type === 'basicPaletteConfig'
+      ) {
         lastColorCmdIndex = i;
         break;
       }

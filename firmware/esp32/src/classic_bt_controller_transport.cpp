@@ -340,6 +340,7 @@ bool ClassicBtControllerTransport::initializeNvsAndBaseAddress() {
     Serial.printf("WARN base_mac_set failed err=%s\n", esp_err_to_name(err));
     return false;
   }
+  std::memcpy(deviceMac_, baseMac, sizeof(deviceMac_));
 
   Serial.printf(
       "INFO bt base_mac=%02X:%02X:%02X:%02X:%02X:%02X source=%s\n",
@@ -1288,7 +1289,10 @@ void ClassicBtControllerTransport::processIncomingReport(uint8_t reportId, uint1
       data[11]);
 
   if (data[9] == 2) {
-    sendSubcommandReply(0x21, kReply02, sizeof(kReply02), "reply02");
+    uint8_t reply02Buffer[sizeof(kReply02)];
+    std::memcpy(reply02Buffer, kReply02, sizeof(kReply02));
+    std::memcpy(&reply02Buffer[18], deviceMac_, 6);
+    sendSubcommandReply(0x21, reply02Buffer, sizeof(reply02Buffer), "reply02");
     return;
   }
   if (data[9] == 8) {

@@ -42,6 +42,7 @@ const COLOR_PALETTE_EDITOR_RESET_LEFT_HOLD_MS = 3_000;
 const COLOR_PALETTE_EDITOR_HUE_RESET_SETTLE_MS = 500;
 const BASIC_COLOR_TAB_SETTLE_MS = 140;
 const PALETTE_CONFIG_TIMEOUT_MARGIN_MS = 2_000;
+const ADJ_BASELINE_MS = 1_600; // Y+Y+R settle + B+B settle ≈ 1600ms
 
 interface SerialCommandSendOptions {
   ackTimeoutMs: number;
@@ -152,6 +153,24 @@ function estimatePaletteConfigDurationMs(
     saturationSteps * menuPressMs +
     valueDropSteps * menuPressMs +
     3 * generalPressMs + // B, A, B
+    timing.inputDelayMs +
+    PALETTE_CONFIG_TIMEOUT_MARGIN_MS
+  );
+}
+
+function estimateAdjustPaletteDurationMs(
+  dHue: number,
+  dSat: number,
+  dVal: number,
+  timing: InputTiming,
+): number {
+  const generalPressMs = timing.buttonPressMs + timing.inputDelayMs;
+  const totalDeltaSteps = Math.abs(dHue) + Math.abs(dSat) + Math.abs(dVal);
+
+  return (
+    ADJ_BASELINE_MS +
+    totalDeltaSteps * generalPressMs +
+    2 * generalPressMs +   // B × 2 to exit
     timing.inputDelayMs +
     PALETTE_CONFIG_TIMEOUT_MARGIN_MS
   );
@@ -471,6 +490,23 @@ export function getAckTimeoutForCommand(
     // Official/basic color configuration traverses multiple menu layers and a
     // wrapped 7x12 grid before returning to the canvas.
     return Math.max(baseTimeoutMs, 15_000);
+  }
+
+  if (trimmed.startsWith("ADJ ")) {
+    const match = /^ADJ\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)$/u.exec(trimmed);
+
+    if (!match || match[1] === undefined || match[2] === undefined || match[3] === undefined || match[4] === undefined) {
+      return Math.max(baseTimeoutMs, 10_000);
+    }
+
+    const dHue = Number.parseInt(match[2], 10);
+    const dSat = Number.parseInt(match[3], 10);
+    const dVal = Number.parseInt(match[4], 10);
+
+    return Math.max(
+      baseTimeoutMs,
+      estimateAdjustPaletteDurationMs(dHue, dSat, dVal, timing),
+    );
   }
 
   if (trimmed.startsWith("PC ")) {

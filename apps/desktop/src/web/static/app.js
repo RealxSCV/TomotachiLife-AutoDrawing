@@ -1932,18 +1932,28 @@ els.controllerInfoButton.addEventListener("click", async () => {
 
   if (!statusOk) {
     appendLog(els.controllerLogOutput, "当前状态读取失败，改为重置蓝牙后重新连接。");
+
+    setControllerPendingStatus({
+      title: "正在准备连接手柄",
+      detail: "正在重置蓝牙并重新进入可发现状态，请保持 Switch 停在“更改握法/顺序”页面。",
+    });
+
+    const payload = await runControllerCommands(["BT RESET", "I"], "连接手柄");
+
+    if (payload) {
+      startControllerStatusPolling();
+    }
+    return;
   }
 
-  setControllerPendingStatus({
-    title: "正在准备连接手柄",
-    detail: "正在重置蓝牙并重新进入可发现状态，请保持 Switch 停在“更改握法/顺序”页面。",
-  });
-
-  const payload = await runControllerCommands(["BT RESET", "I"], "连接手柄");
-
-  if (payload) {
-    startControllerStatusPolling();
-  }
+  // 能读到状态但没有连接——板子可能正在广播或等待配对，
+  // 蓝牙状态没有问题，只需开始轮询等待连接完成即可。
+  // 不要主动发 BT RESET，这会拆掉蓝牙堆栈，打断 Switch 正在进行的配对。
+  appendLog(
+    els.controllerLogOutput,
+    "开发板已经在广播，正在等待 Switch 连接。请保持 Switch 停在“更改握法/顺序”页面。",
+  );
+  startControllerStatusPolling();
 });
 
 els.controllerResetButton.addEventListener("click", async () => {
