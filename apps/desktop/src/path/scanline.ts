@@ -885,19 +885,18 @@ export function generateScanlinePlan(
       let prefixCommands: DrawCommand[];
 
       if (isFirstColor) {
-        // 第一色：走绝对调色（带归位）
+        // 第一色：走绝对调色（带归位），退出时槽 0 已选中
         commands.push(paletteConfigCommand(0, color.colorHex));
-        prefixCommands = [paletteConfigCommand(0, color.colorHex), colorCommand(0)];
+        prefixCommands = [paletteConfigCommand(0, color.colorHex)];
       } else {
-        // 后续色：计算相对增量
+        // 后续色：计算相对增量，退出时槽 0 已选中
         dHue = targetSteps.hue - lastHsvSteps!.hue;
         dSat = targetSteps.sat - lastHsvSteps!.sat;
         dVal = targetSteps.val - lastHsvSteps!.val;
         commands.push(adjustPaletteCommand(0, dHue, dSat, dVal));
-        prefixCommands = [adjustPaletteCommand(0, dHue, dSat, dVal), colorCommand(0)];
+        prefixCommands = [adjustPaletteCommand(0, dHue, dSat, dVal)];
       }
 
-      commands.push(colorCommand(0));
       lastHsvSteps = targetSteps;
 
       const orderedPixels = getOrderedPixelsForColor(pixelsByColor, color.colorIndex, current, profile, grid, pathStrategy);
@@ -928,7 +927,6 @@ export function generateScanlinePlan(
 
       // 始终配置槽 0（当前选中色）；已内置基本色 delta 追踪，无需归位
       commands.push(basicPaletteConfigCommand(0, cell.row, cell.col));
-      commands.push(colorCommand(0));
 
       const orderedPixels = getOrderedPixelsForColor(pixelsByColor, color.colorIndex, current, profile, grid, pathStrategy);
       current = appendResumeSegment(
@@ -945,7 +943,6 @@ export function generateScanlinePlan(
           resumePrefixCommands: [
             ...brushSetupCommands,
             basicPaletteConfigCommand(0, cell.row, cell.col),
-            colorCommand(0),
           ],
         },
       );

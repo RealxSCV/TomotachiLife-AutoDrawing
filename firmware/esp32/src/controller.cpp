@@ -373,41 +373,25 @@ bool SwitchController::configurePaletteSlot(int index, uint8_t red, uint8_t gree
 bool SwitchController::adjustPaletteSlot(int slot, int dHue, int dSat, int dVal) {
   waitUntilReady();
 
-  const int slotIndex = clampPaletteSlotIndex(slot);
-
-  // 1. 按 Y 打开调色板选择器
+  // 1. Y → 打开调色板
   if (!transport_.pressButton(ControllerButton::Y, buttonPressMs_, inputDelayMs_)) {
     return false;
   }
   delay(COLOR_PALETTE_MENU_OPEN_SETTLE_MS);
 
-  // 2. 按 18 次 ↓ 到底 → 回退到上一行
-  for (int step = 0; step < COLOR_PALETTE_RESET_TO_BOTTOM_STEPS; step += 1) {
-    if (!pressPaletteMenuButton(transport_, ControllerButton::DpadDown)) {
-      return false;
-    }
-  }
-
-  // 3. 按 N 次 ↑ 回到目标槽
-  for (int step = 0; step < (COLOR_PALETTE_SLOT_COUNT - 1 - slotIndex); step += 1) {
-    if (!pressPaletteMenuButton(transport_, ControllerButton::DpadUp)) {
-      return false;
-    }
-  }
-
-  // 4. 按 Y 进入调色板编辑器
+  // 2. Y → 直接进入当前选中颜色的 HSV 编辑器（跳过选槽）
   if (!pressPaletteMenuButton(transport_, ControllerButton::Y)) {
     return false;
   }
   delay(COLOR_PALETTE_EDITOR_OPEN_SETTLE_MS);
 
-  // 5. 按 R 切换到自定义色标签
+  // 3. R → 切换到自定义色 / HSV 标签
   if (!pressPaletteMenuButton(transport_, ControllerButton::R)) {
     return false;
   }
   delay(BASIC_COLOR_TAB_SETTLE_MS);
 
-  // 6. 按相对增量移动（无归位操作！）
+  // 4. 按相对增量移动（无归位操作！）
   //    色相：dHue > 0 → ZR，dHue < 0 → ZL
   if (dHue > 0) {
     for (int step = 0; step < dHue; step += 1) {
@@ -453,9 +437,8 @@ bool SwitchController::adjustPaletteSlot(int slot, int dHue, int dSat, int dVal)
     }
   }
 
-  // 7. 退出编辑器，应用调色，返回绘画模式
+  // 7. 退出编辑器并返回绘画模式（Y→Y 直接进编辑器，只需 B→B 退出）
   if (!transport_.pressButton(ControllerButton::B, buttonPressMs_, inputDelayMs_) ||
-      !transport_.pressButton(ControllerButton::A, buttonPressMs_, inputDelayMs_) ||
       !transport_.pressButton(ControllerButton::B, buttonPressMs_, inputDelayMs_)) {
     return false;
   }
