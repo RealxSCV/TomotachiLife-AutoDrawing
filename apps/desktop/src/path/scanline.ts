@@ -805,7 +805,7 @@ function appendResumeSegment(
 export function generateScanlinePlan(
   pixelMap: PixelMap,
   profile: DrawingProfile,
-  pathStrategy: PathStrategy = "scanline",
+  pathStrategy: PathStrategy = "nearest",
 ): GeneratedScanlinePlan {
   const commands: DrawCommand[] = [];
   const grid = createBrushGrid(profile);
@@ -873,6 +873,8 @@ export function generateScanlinePlan(
     }
   } else if (profile.colorMode === "palette") {
     const usedColors = getUsedPaletteColors(pixelMap);
+    let firstHsvSteps: HsvSteps | null = null;
+    let firstColorHex = "";
     let lastHsvSteps: HsvSteps | null = null;
 
     for (const color of usedColors) {
@@ -883,11 +885,15 @@ export function generateScanlinePlan(
       let dSat = 0;
       let dVal = 0;
       let prefixCommands: DrawCommand[];
+      let recoveryPrefixCommands: DrawCommand[];
 
       if (isFirstColor) {
+        firstHsvSteps = targetSteps;
+        firstColorHex = color.colorHex;
         // 第一色：走绝对调色（带归位），退出时槽 0 已选中
         commands.push(paletteConfigCommand(0, color.colorHex));
         prefixCommands = [paletteConfigCommand(0, color.colorHex)];
+        recoveryPrefixCommands = prefixCommands;  // 恢复同初次执行
       } else {
         // 后续色：计算相对增量，退出时槽 0 已选中
         dHue = targetSteps.hue - lastHsvSteps!.hue;
@@ -895,6 +901,16 @@ export function generateScanlinePlan(
         dVal = targetSteps.val - lastHsvSteps!.val;
         commands.push(adjustPaletteCommand(0, dHue, dSat, dVal));
         prefixCommands = [adjustPaletteCommand(0, dHue, dSat, dVal)];
+        // 恢复路径：从第一色绝对调色，再累积跳转到目标色
+        recoveryPrefixCommands = [
+          paletteConfigCommand(0, firstColorHex),
+          adjustPaletteCommand(
+            0,
+            targetSteps.hue - firstHsvSteps!.hue,
+            targetSteps.sat - firstHsvSteps!.sat,
+            targetSteps.val - firstHsvSteps!.val,
+          ),
+        ];
       }
 
       lastHsvSteps = targetSteps;
@@ -913,7 +929,7 @@ export function generateScanlinePlan(
           slotIndex: 0,
           resumePrefixCommands: [
             ...brushSetupCommands,
-            ...prefixCommands,
+            ...recoveryPrefixCommands,
           ],
         },
       );
@@ -964,7 +980,7 @@ export function generateScanlinePlan(
 export function generateScanlineCommands(
   pixelMap: PixelMap,
   profile: DrawingProfile,
-  pathStrategy: PathStrategy = "scanline",
+  pathStrategy: PathStrategy = "nearest",
 ): DrawCommand[] {
   return generateScanlinePlan(pixelMap, profile, pathStrategy).commands;
 }

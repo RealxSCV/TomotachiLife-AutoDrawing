@@ -232,7 +232,7 @@ test("a 200 pixel horizontal line stays one L run from center start", () => {
     1,
     Array.from({ length: 200 }, (_, x) => ({ x, y: 0 })),
   );
-  const commands = serializeCommands(generateScanlineCommands(pixelMap, profile));
+  const commands = serializeCommands(generateScanlineCommands(pixelMap, profile, "scanline"));
   const lineCommands = getSerializedLineVectors(commands);
 
   assert.equal(lineCommands.length, 1);

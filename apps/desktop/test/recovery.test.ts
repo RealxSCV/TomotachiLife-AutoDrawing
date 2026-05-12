@@ -216,7 +216,7 @@ test("official and palette resume segments use per-color on-demand config", () =
   const palettePlan = generateScanlinePlan(pixelMap, paletteProfile);
   const paletteSegments = palettePlan.resumePlan.segments;
 
-  // 自定义色模式：第一色用 PC 0 hex（绝对），后续用 ADJ 0 delta（相对），退出时槽 0 已激活
+  // 自定义色模式：第一色用 PC 0 hex（绝对），后续用 PC 0 firstColorHex + ADJ 0 cumDelta（从第一色累积跳转）
   assert.deepEqual(
     paletteSegments[0]?.resumePrefixCommands.slice(0, expectedSquarePrefix.length),
     expectedSquarePrefix,
@@ -228,15 +228,17 @@ test("official and palette resume segments use per-color on-demand config", () =
     paletteSegments[1]?.resumePrefixCommands.slice(0, expectedSquarePrefix.length),
     expectedSquarePrefix,
   );
-  assert.match(paletteSegments[1]?.resumePrefixCommands[expectedSquarePrefix.length] ?? "", /^ADJ 0 /u);
-  assert.equal(paletteSegments[1]?.resumePrefixCommands.length, expectedSquarePrefix.length + 1);
+  assert.match(paletteSegments[1]?.resumePrefixCommands[expectedSquarePrefix.length] ?? "", /^PC 0 #00ff00$/u);
+  assert.match(paletteSegments[1]?.resumePrefixCommands[expectedSquarePrefix.length + 1] ?? "", /^ADJ 0 /u);
+  assert.equal(paletteSegments[1]?.resumePrefixCommands.length, expectedSquarePrefix.length + 2);
 
   assert.deepEqual(
     paletteSegments[2]?.resumePrefixCommands.slice(0, expectedSquarePrefix.length),
     expectedSquarePrefix,
   );
-  assert.match(paletteSegments[2]?.resumePrefixCommands[expectedSquarePrefix.length] ?? "", /^ADJ 0 /u);
-  assert.equal(paletteSegments[2]?.resumePrefixCommands.length, expectedSquarePrefix.length + 1);
+  assert.match(paletteSegments[2]?.resumePrefixCommands[expectedSquarePrefix.length] ?? "", /^PC 0 #00ff00$/u);
+  assert.match(paletteSegments[2]?.resumePrefixCommands[expectedSquarePrefix.length + 1] ?? "", /^ADJ 0 /u);
+  assert.equal(paletteSegments[2]?.resumePrefixCommands.length, expectedSquarePrefix.length + 2);
 });
 
 test("recovery execution plan redraws the current failed color segment and still reaches the original total", async () => {

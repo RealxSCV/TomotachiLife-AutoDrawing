@@ -83,6 +83,7 @@ class ClassicBtControllerTransport : public ControllerTransport {
   volatile uint32_t inputReportSendEventCount_ = 0;
   volatile int lastInputReportStatus_ = -1;
   volatile uint8_t lastInputReportReason_ = 0;
+  uint8_t deviceMac_[6] = {};
   uint8_t lastPeerAddress_[6] = {};
   bool hasPeerAddress_ = false;
   bool hasReconnectablePeer_ = false;
